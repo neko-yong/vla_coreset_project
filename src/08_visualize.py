@@ -15,12 +15,13 @@ from utils import ensure_dir, get_project_root, get_train_test_masks, set_seed
 
 
 REQUIRED_METHODS = ("random", "action_change", "fusion")
-METHOD_ORDER = ("random", "action_change", "visual_cluster", "fusion", "full")
+METHOD_ORDER = ("random", "action_change", "visual_cluster", "fusion", "fusion_neighbor", "full")
 METHOD_LABELS = {
     "random": "Random",
     "action_change": "Action-Change",
     "visual_cluster": "Visual-Cluster",
     "fusion": "Fusion",
+    "fusion_neighbor": "Fusion+Neighbor",
     "full": "Full",
 }
 METHOD_COLORS = {
@@ -28,6 +29,7 @@ METHOD_COLORS = {
     "action_change": "#F58518",
     "visual_cluster": "#B279A2",
     "fusion": "#54A24B",
+    "fusion_neighbor": "#E45756",
     "full": "#4C78A8",
 }
 METHOD_MARKERS = {
@@ -35,6 +37,7 @@ METHOD_MARKERS = {
     "action_change": "^",
     "visual_cluster": "D",
     "fusion": "s",
+    "fusion_neighbor": "P",
 }
 
 
@@ -80,6 +83,8 @@ def load_stage_data(feature_dir: Path, result_dir: Path) -> dict[str, Any]:
     }
     visual_path = result_dir / "selected_indices_visual_cluster.npy"
     data["selected_visual_cluster"] = np.load(visual_path) if visual_path.exists() else None
+    neighbor_path = result_dir / "selected_indices_fusion_neighbor.npy"
+    data["selected_fusion_neighbor"] = np.load(neighbor_path) if neighbor_path.exists() else None
 
     missing_methods = [m for m in REQUIRED_METHODS if m not in set(data["results"]["method"])]
     if missing_methods:
@@ -173,6 +178,7 @@ def plot_action_change_selected(
     selected_action: np.ndarray,
     selected_fusion: np.ndarray,
     selected_visual_cluster: np.ndarray | None,
+    selected_fusion_neighbor: np.ndarray | None,
     train_episodes: list[int],
     requested_episode: int,
     figure_dir: Path,
@@ -185,6 +191,8 @@ def plot_action_change_selected(
     ]
     if selected_visual_cluster is not None:
         selected_sets.append(set(selected_visual_cluster.astype(int)))
+    if selected_fusion_neighbor is not None:
+        selected_sets.append(set(selected_fusion_neighbor.astype(int)))
     episode_id = choose_episode_for_action_plot(
         requested_episode,
         episode_ids,
@@ -217,6 +225,12 @@ def plot_action_change_selected(
             METHOD_COLORS["visual_cluster"],
         ),
         ("Fusion selected", selected_fusion, METHOD_MARKERS["fusion"], METHOD_COLORS["fusion"]),
+        (
+            "Fusion+Neighbor selected",
+            selected_fusion_neighbor,
+            METHOD_MARKERS["fusion_neighbor"],
+            METHOD_COLORS["fusion_neighbor"],
+        ),
     ]
     episode_set = set(episode_indices.astype(int))
     for label, selected, marker, color in marker_specs:
@@ -254,6 +268,7 @@ def plot_pca_feature_distribution(
     selected_random: np.ndarray,
     selected_fusion: np.ndarray,
     selected_visual_cluster: np.ndarray | None,
+    selected_fusion_neighbor: np.ndarray | None,
     train_mask: np.ndarray,
     max_pca_samples: int,
     seed: int,
@@ -282,9 +297,15 @@ def plot_pca_feature_distribution(
         if selected_visual_cluster is not None
         else None
     )
+    neighbor_train = (
+        selected_fusion_neighbor[train_mask[selected_fusion_neighbor]]
+        if selected_fusion_neighbor is not None
+        else None
+    )
     random_xy = pca.transform(features[random_train])
     fusion_xy = pca.transform(features[fusion_train])
     visual_xy = pca.transform(features[visual_train]) if visual_train is not None else None
+    neighbor_xy = pca.transform(features[neighbor_train]) if neighbor_train is not None else None
 
     plt.figure(figsize=(8.2, 6.2))
     plt.scatter(
@@ -322,6 +343,16 @@ def plot_pca_feature_distribution(
             marker=METHOD_MARKERS["visual_cluster"],
             label="Visual-Cluster selected",
         )
+    if neighbor_xy is not None:
+        plt.scatter(
+            neighbor_xy[:, 0],
+            neighbor_xy[:, 1],
+            s=20,
+            color=METHOD_COLORS["fusion_neighbor"],
+            alpha=0.72,
+            marker=METHOD_MARKERS["fusion_neighbor"],
+            label="Fusion+Neighbor selected",
+        )
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
     plt.title("PCA Visualization of ResNet18 Features and Selected Samples")
@@ -336,6 +367,7 @@ def plot_selected_frame_distribution(
     selected_action: np.ndarray,
     selected_fusion: np.ndarray,
     selected_visual_cluster: np.ndarray | None,
+    selected_fusion_neighbor: np.ndarray | None,
     train_episodes: list[int],
     figure_dir: Path,
 ) -> None:
@@ -346,6 +378,7 @@ def plot_selected_frame_distribution(
         "action_change": selected_action,
         "visual_cluster": selected_visual_cluster,
         "fusion": selected_fusion,
+        "fusion_neighbor": selected_fusion_neighbor,
     }
     method_arrays = {method: selected for method, selected in method_arrays.items() if selected is not None}
     for method, selected in method_arrays.items():
@@ -472,6 +505,7 @@ def main() -> None:
         selected_action=data["selected_action"],
         selected_fusion=data["selected_fusion"],
         selected_visual_cluster=data["selected_visual_cluster"],
+        selected_fusion_neighbor=data["selected_fusion_neighbor"],
         train_episodes=train_episodes,
         requested_episode=args.episode_to_plot,
         figure_dir=figure_dir,
@@ -482,6 +516,7 @@ def main() -> None:
         selected_random=data["selected_random"],
         selected_fusion=data["selected_fusion"],
         selected_visual_cluster=data["selected_visual_cluster"],
+        selected_fusion_neighbor=data["selected_fusion_neighbor"],
         train_mask=train_mask,
         max_pca_samples=args.max_pca_samples,
         seed=args.seed,
@@ -493,6 +528,7 @@ def main() -> None:
         selected_action=data["selected_action"],
         selected_fusion=data["selected_fusion"],
         selected_visual_cluster=data["selected_visual_cluster"],
+        selected_fusion_neighbor=data["selected_fusion_neighbor"],
         train_episodes=train_episodes,
         figure_dir=figure_dir,
     )

@@ -1,0 +1,237 @@
+[
+  {
+    "relative_path": "checkpoints/mlp_action_change.pt",
+    "file_size_bytes": 670029,
+    "modified_time": "2026-06-16T13:23:38"
+  },
+  {
+    "relative_path": "checkpoints/mlp_full.pt",
+    "file_size_bytes": 669921,
+    "modified_time": "2026-06-16T13:37:04"
+  },
+  {
+    "relative_path": "checkpoints/mlp_fusion.pt",
+    "file_size_bytes": 669881,
+    "modified_time": "2026-06-16T13:23:46"
+  },
+  {
+    "relative_path": "checkpoints/mlp_fusion_neighbor.pt",
+    "file_size_bytes": 670053,
+    "modified_time": "2026-06-16T14:28:03"
+  },
+  {
+    "relative_path": "checkpoints/mlp_random.pt",
+    "file_size_bytes": 669945,
+    "modified_time": "2026-06-16T13:23:29"
+  },
+  {
+    "relative_path": "checkpoints/mlp_visual_cluster.pt",
+    "file_size_bytes": 669977,
+    "modified_time": "2026-06-16T14:07:05"
+  },
+  {
+    "relative_path": "experiment_note.md",
+    "file_size_bytes": 3849,
+    "modified_time": "2026-06-16T14:35:15"
+  },
+  {
+    "relative_path": "figures/action_change_selected.png",
+    "file_size_bytes": 230489,
+    "modified_time": "2026-06-16T14:28:28"
+  },
+  {
+    "relative_path": "figures/joint_mse_comparison.png",
+    "file_size_bytes": 116970,
+    "modified_time": "2026-06-16T14:28:29"
+  },
+  {
+    "relative_path": "figures/mse_comparison.png",
+    "file_size_bytes": 115318,
+    "modified_time": "2026-06-16T14:28:28"
+  },
+  {
+    "relative_path": "figures/pca_feature_distribution.png",
+    "file_size_bytes": 1818122,
+    "modified_time": "2026-06-16T14:28:28"
+  },
+  {
+    "relative_path": "figures/selected_frame_distribution.png",
+    "file_size_bytes": 159791,
+    "modified_time": "2026-06-16T14:28:29"
+  },
+  {
+    "relative_path": "README_snapshot.md",
+    "file_size_bytes": 9552,
+    "modified_time": "2026-06-16T14:34:55"
+  },
+  {
+    "relative_path": "report_assets/result_tables/results_summary.csv",
+    "file_size_bytes": 1216,
+    "modified_time": "2026-06-16T14:28:29"
+  },
+  {
+    "relative_path": "report_assets/result_tables/results_summary.md",
+    "file_size_bytes": 993,
+    "modified_time": "2026-06-16T14:28:29"
+  },
+  {
+    "relative_path": "results/action_change_scores.npy",
+    "file_size_bytes": 80128,
+    "modified_time": "2026-06-16T13:15:41"
+  },
+  {
+    "relative_path": "results/action_change_selection_info.json",
+    "file_size_bytes": 779,
+    "modified_time": "2026-06-16T13:15:41"
+  },
+  {
+    "relative_path": "results/eval_action_change.json",
+    "file_size_bytes": 642,
+    "modified_time": "2026-06-16T13:23:38"
+  },
+  {
+    "relative_path": "results/eval_full.json",
+    "file_size_bytes": 626,
+    "modified_time": "2026-06-16T13:37:04"
+  },
+  {
+    "relative_path": "results/eval_fusion.json",
+    "file_size_bytes": 628,
+    "modified_time": "2026-06-16T13:23:46"
+  },
+  {
+    "relative_path": "results/eval_fusion_neighbor.json",
+    "file_size_bytes": 647,
+    "modified_time": "2026-06-16T14:28:03"
+  },
+  {
+    "relative_path": "results/eval_random.json",
+    "file_size_bytes": 630,
+    "modified_time": "2026-06-16T13:23:29"
+  },
+  {
+    "relative_path": "results/eval_visual_cluster.json",
+    "file_size_bytes": 648,
+    "modified_time": "2026-06-16T14:07:05"
+  },
+  {
+    "relative_path": "results/fusion_action_scores.npy",
+    "file_size_bytes": 80128,
+    "modified_time": "2026-06-16T13:15:49"
+  },
+  {
+    "relative_path": "results/fusion_cluster_ids.npy",
+    "file_size_bytes": 80128,
+    "modified_time": "2026-06-16T13:15:49"
+  },
+  {
+    "relative_path": "results/fusion_neighbor_action_scores.npy",
+    "file_size_bytes": 80128,
+    "modified_time": "2026-06-16T14:26:59"
+  },
+  {
+    "relative_path": "results/fusion_neighbor_cluster_ids.npy",
+    "file_size_bytes": 80128,
+    "modified_time": "2026-06-16T14:26:59"
+  },
+  {
+    "relative_path": "results/fusion_neighbor_sample_table.csv",
+    "file_size_bytes": 989724,
+    "modified_time": "2026-06-16T14:26:59"
+  },
+  {
+    "relative_path": "results/fusion_neighbor_selection_info.json",
+    "file_size_bytes": 1081,
+    "modified_time": "2026-06-16T14:26:59"
+  },
+  {
+    "relative_path": "results/fusion_sample_table.csv",
+    "file_size_bytes": 798694,
+    "modified_time": "2026-06-16T13:15:49"
+  },
+  {
+    "relative_path": "results/fusion_selection_info.json",
+    "file_size_bytes": 916,
+    "modified_time": "2026-06-16T13:15:49"
+  },
+  {
+    "relative_path": "results/random_selection_info.json",
+    "file_size_bytes": 684,
+    "modified_time": "2026-06-16T13:15:39"
+  },
+  {
+    "relative_path": "results/results.csv",
+    "file_size_bytes": 1363,
+    "modified_time": "2026-06-16T14:28:03"
+  },
+  {
+    "relative_path": "results/selected_indices_action_change.npy",
+    "file_size_bytes": 12928,
+    "modified_time": "2026-06-16T13:15:41"
+  },
+  {
+    "relative_path": "results/selected_indices_fusion.npy",
+    "file_size_bytes": 12928,
+    "modified_time": "2026-06-16T13:15:49"
+  },
+  {
+    "relative_path": "results/selected_indices_fusion_neighbor.npy",
+    "file_size_bytes": 12928,
+    "modified_time": "2026-06-16T14:26:59"
+  },
+  {
+    "relative_path": "results/selected_indices_random.npy",
+    "file_size_bytes": 12928,
+    "modified_time": "2026-06-16T13:15:39"
+  },
+  {
+    "relative_path": "results/selected_indices_visual_cluster.npy",
+    "file_size_bytes": 12928,
+    "modified_time": "2026-06-16T14:06:37"
+  },
+  {
+    "relative_path": "results/train_log_action_change.csv",
+    "file_size_bytes": 2587,
+    "modified_time": "2026-06-16T13:23:38"
+  },
+  {
+    "relative_path": "results/train_log_full.csv",
+    "file_size_bytes": 2647,
+    "modified_time": "2026-06-16T13:37:04"
+  },
+  {
+    "relative_path": "results/train_log_fusion.csv",
+    "file_size_bytes": 2584,
+    "modified_time": "2026-06-16T13:23:46"
+  },
+  {
+    "relative_path": "results/train_log_fusion_neighbor.csv",
+    "file_size_bytes": 2587,
+    "modified_time": "2026-06-16T14:28:03"
+  },
+  {
+    "relative_path": "results/train_log_random.csv",
+    "file_size_bytes": 2579,
+    "modified_time": "2026-06-16T13:23:29"
+  },
+  {
+    "relative_path": "results/train_log_visual_cluster.csv",
+    "file_size_bytes": 2584,
+    "modified_time": "2026-06-16T14:07:05"
+  },
+  {
+    "relative_path": "results/visual_cluster_ids.npy",
+    "file_size_bytes": 80128,
+    "modified_time": "2026-06-16T14:06:37"
+  },
+  {
+    "relative_path": "results/visual_cluster_sample_table.csv",
+    "file_size_bytes": 615234,
+    "modified_time": "2026-06-16T14:06:37"
+  },
+  {
+    "relative_path": "results/visual_cluster_selection_info.json",
+    "file_size_bytes": 867,
+    "modified_time": "2026-06-16T14:06:37"
+  }
+]

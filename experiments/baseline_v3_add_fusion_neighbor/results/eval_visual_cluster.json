@@ -1,0 +1,20 @@
+{
+  "method": "visual_cluster",
+  "sample_ratio": 0.1,
+  "num_train_samples": 1600,
+  "num_test_samples": 4000,
+  "test_mse": 0.004116427352606219,
+  "joint_1_mse": 0.00011582968980656005,
+  "joint_2_mse": 0.0018919363552704453,
+  "joint_3_mse": 0.002525326743721962,
+  "joint_4_mse": 0.0010386281332466752,
+  "joint_5_mse": 0.0018876231601461769,
+  "joint_6_mse": 0.0019272145421709865,
+  "joint_7_mse": 0.019428432843880728,
+  "epochs": 100,
+  "batch_size": 128,
+  "lr": 0.001,
+  "seed": 42,
+  "standardize_features": true,
+  "checkpoint_path": "D:\\projects\\vla_coreset_project\\outputs\\checkpoints\\mlp_visual_cluster.pt"
+}

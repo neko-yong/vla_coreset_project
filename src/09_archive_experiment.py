@@ -16,6 +16,7 @@ from utils import ensure_dir, get_project_root
 
 DEFAULT_EXPERIMENT_NAME = "baseline_v1_random_action_fusion"
 VISUAL_CLUSTER_EXPERIMENT_NAME = "baseline_v2_add_visual_cluster"
+FUSION_NEIGHBOR_EXPERIMENT_NAME = "baseline_v3_add_fusion_neighbor"
 
 
 def parse_args() -> argparse.Namespace:
@@ -229,6 +230,10 @@ def build_method_explanations(results: pd.DataFrame) -> str:
         "action_change": "Action-Change: action surprise from adjacent action changes only.",
         "fusion": "Fusion: visual clustering coverage plus action surprise.",
         "visual_cluster": "Visual-Cluster: visual clustering coverage only, with random sampling inside each cluster.",
+        "fusion_neighbor": (
+            "Fusion-Neighbor: adds t-1 / t+1 temporal neighbors from the same episode "
+            "around high action-surprise Fusion anchors."
+        ),
         "full": "Full: 100% training set upper-bound reference.",
     }
     return "\n".join(
@@ -374,13 +379,160 @@ This version extends `baseline_v1_random_action_fusion` with a Visual-Cluster On
     print(f"Generated experiment note: {note_path}")
 
 
+def build_fusion_neighbor_observation(results: pd.DataFrame) -> str:
+    """Generate Baseline V3 observations from current results.csv."""
+    if "method" not in results.columns or "test_mse" not in results.columns:
+        raise ValueError("results.csv must contain method and test_mse columns.")
+
+    best_all = results.loc[results["test_mse"].idxmin()]
+    ten_percent = results[results["sample_ratio"].astype(float) < 1.0].copy()
+    if ten_percent.empty:
+        raise ValueError("No 10% methods were found in results.csv.")
+    best_10 = ten_percent.loc[ten_percent["test_mse"].idxmin()]
+
+    lines = [
+        f"- Lowest test MSE among all methods: `{best_all['method']}` "
+        f"({float(best_all['test_mse']):.6f}).",
+        f"- Lowest test MSE among 10% methods: `{best_10['method']}` "
+        f"({float(best_10['test_mse']):.6f}).",
+    ]
+
+    for other in ("random", "fusion", "visual_cluster"):
+        comparison = compare_methods(results, "fusion_neighbor", other)
+        if comparison is not None:
+            lines.append(comparison)
+
+    visual_comparison = compare_methods(results, "visual_cluster", "random")
+    if visual_comparison is not None:
+        lines.append(visual_comparison)
+
+    by_method = results.set_index("method")
+    if str(best_10["method"]) == "visual_cluster":
+        lines.append(
+            "- Visual-Cluster Only is the best 10% method, suggesting that visual "
+            "state coverage is more important than pure action-change emphasis in "
+            "the current task."
+        )
+
+    if {"fusion_neighbor", "fusion"}.issubset(by_method.index):
+        neighbor = float(by_method.loc["fusion_neighbor", "test_mse"])
+        fusion = float(by_method.loc["fusion", "test_mse"])
+        if neighbor >= fusion:
+            lines.append(
+                "- Fusion + Temporal Neighbor does not improve Fusion. Under a fixed "
+                "10% budget, temporal expansion preserves local context but consumes "
+                "samples that could otherwise cover more anchors or visual states."
+            )
+        else:
+            lines.append(
+                "- Fusion + Temporal Neighbor improves Fusion, indicating that local "
+                "temporal context around action-surprise anchors is useful here."
+            )
+
+    if {"fusion_neighbor", "visual_cluster"}.issubset(by_method.index):
+        neighbor = float(by_method.loc["fusion_neighbor", "test_mse"])
+        visual = float(by_method.loc["visual_cluster", "test_mse"])
+        if neighbor >= visual:
+            lines.append(
+                "- Fusion + Temporal Neighbor does not improve Visual-Cluster. This "
+                "suggests that, with single-frame ResNet18 features, preserving visual "
+                "state coverage is more effective than expanding neighborhoods around "
+                "action-change frames."
+            )
+        else:
+            lines.append(
+                "- Fusion + Temporal Neighbor improves Visual-Cluster, suggesting that "
+                "local temporal context adds useful information beyond state coverage."
+            )
+
+    if "full" in by_method.index:
+        full_mse = float(by_method.loc["full", "test_mse"])
+        best_10_mse = float(best_10["test_mse"])
+        verdict = "is better than" if full_mse < best_10_mse else "is not better than"
+        lines.append(
+            f"- Full Data 100% {verdict} all 10% methods "
+            f"({full_mse:.6f} vs. best 10% {best_10_mse:.6f})."
+        )
+
+    return "\n".join(lines)
+
+
+def generate_v3_note(results: pd.DataFrame, note_path: Path) -> None:
+    """Generate Baseline V3 experiment note with Fusion + Temporal Neighbor."""
+    results_table = build_results_table(results)
+    observation = build_fusion_neighbor_observation(results)
+    methods = build_method_explanations(results)
+    full_note = (
+        "- Full Data 100% is included as an upper-bound reference."
+        if "full" in set(results["method"])
+        else "- Full Data 100% is not included in the current results.csv."
+    )
+
+    note = f"""# Baseline V3: Add Fusion + Temporal Neighbor Coreset
+
+## 1. Experiment Purpose
+
+This version extends baseline_v2 with Fusion + Temporal Neighbor Coreset. The goal is to test whether local temporal context around high action-surprise key frames helps coreset selection.
+
+## 2. Difference from Previous Versions
+
+- Baseline V1 contains Random 10%, Action-Change 10%, and Fusion 10%.
+- Baseline V2 adds Visual-Cluster Only 10%.
+- Baseline V3 adds Fusion + Temporal Neighbor 10%.
+{full_note}
+
+## 3. Dataset and Feature Setting
+
+- Dataset: `lerobot/aloha_sim_transfer_cube_human`
+- Image field: `observation.images.top`
+- Action label: `action[:7]`
+- Feature extractor: frozen ImageNet-pretrained ResNet18
+- Feature dimension: 512
+- Train episodes: first 40 episodes
+- Test episodes: last 10 episodes
+- Train samples: 16000
+- Test samples: 4000
+
+## 4. Methods
+
+{methods}
+
+## 5. Main Results
+
+{results_table}
+
+## 6. Observation
+
+{observation}
+
+## 7. Archived Files
+
+- `results.csv`
+- `eval_*.json`
+- `train_log_*.csv`
+- `selected_indices_*.npy`
+- `fusion_neighbor_sample_table.csv`
+- `fusion_neighbor_selection_info.json`
+- `mse_comparison.png`
+- `action_change_selected.png`
+- `pca_feature_distribution.png`
+- `selected_frame_distribution.png`
+- `joint_mse_comparison.png`
+- `mlp_*.pt`
+"""
+    note_path.write_text(note, encoding="utf-8")
+    print(f"Generated experiment note: {note_path}")
+
+
 def generate_experiment_note(results_csv: Path, note_path: Path, experiment_name: str) -> None:
     """Generate experiment_note.md from the archived results.csv."""
     if not results_csv.exists():
         raise FileNotFoundError(f"Cannot generate experiment note; missing: {results_csv}")
 
     results = pd.read_csv(results_csv)
-    if experiment_name == VISUAL_CLUSTER_EXPERIMENT_NAME:
+    if experiment_name == FUSION_NEIGHBOR_EXPERIMENT_NAME:
+        generate_v3_note(results, note_path)
+    elif experiment_name == VISUAL_CLUSTER_EXPERIMENT_NAME:
         generate_v2_note(results, note_path)
     else:
         generate_v1_note(results, note_path)

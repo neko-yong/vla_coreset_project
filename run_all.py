@@ -22,19 +22,23 @@ def parse_args() -> argparse.Namespace:
             "select-action",
             "select-visual",
             "select-fusion",
+            "select-fusion-neighbor",
             "select-all",
             "select-all-plus",
             "train-random",
             "train-action",
             "train-visual",
             "train-fusion",
+            "train-fusion-neighbor",
             "train-full",
             "train-all",
             "train-all-plus",
             "eval-visual",
+            "eval-fusion-neighbor",
             "visualize",
             "archive-baseline",
             "archive-visual",
+            "archive-fusion-neighbor",
         ),
         help="Stage to run. Default is the lightweight dataset loading check.",
     )
@@ -77,6 +81,7 @@ def build_commands(project_root: Path, args: argparse.Namespace) -> list[list[st
         "select-action": ["04_select_action_change.py"],
         "select-visual": ["05b_select_visual_cluster.py"],
         "select-fusion": ["05_select_fusion_coreset.py"],
+        "select-fusion-neighbor": ["05c_select_fusion_neighbor.py"],
         "select-all": [
             "03_select_random.py",
             "04_select_action_change.py",
@@ -111,11 +116,22 @@ def build_commands(project_root: Path, args: argparse.Namespace) -> list[list[st
             ]
         ]
 
+    if args.stage == "archive-fusion-neighbor":
+        return [
+            [
+                sys.executable,
+                str(project_root / "src" / "09_archive_experiment.py"),
+                "--experiment_name",
+                "baseline_v3_add_fusion_neighbor",
+            ]
+        ]
+
     train_methods = {
         "train-random": ["random"],
         "train-action": ["action_change"],
         "train-visual": ["visual_cluster"],
         "train-fusion": ["fusion"],
+        "train-fusion-neighbor": ["fusion_neighbor"],
         "train-full": ["full"],
         "train-all": ["random", "action_change", "fusion"],
         "train-all-plus": ["random", "action_change", "fusion", "visual_cluster"],
@@ -127,6 +143,15 @@ def build_commands(project_root: Path, args: argparse.Namespace) -> list[list[st
                 str(project_root / "src" / "07_evaluate.py"),
                 "--method",
                 "visual_cluster",
+            ]
+        ]
+    if args.stage == "eval-fusion-neighbor":
+        return [
+            [
+                sys.executable,
+                str(project_root / "src" / "07_evaluate.py"),
+                "--method",
+                "fusion_neighbor",
             ]
         ]
 

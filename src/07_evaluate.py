@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--method",
         default="random",
-        choices=("random", "action_change", "visual_cluster", "fusion", "full"),
+        choices=("random", "action_change", "visual_cluster", "fusion", "fusion_neighbor", "full"),
     )
     parser.add_argument("--feature_dir", default="outputs/features")
     parser.add_argument("--checkpoint_dir", default="outputs/checkpoints")

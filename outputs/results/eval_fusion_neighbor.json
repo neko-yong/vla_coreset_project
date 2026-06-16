@@ -1,0 +1,20 @@
+{
+  "method": "fusion_neighbor",
+  "sample_ratio": 0.1,
+  "num_train_samples": 1600,
+  "num_test_samples": 4000,
+  "test_mse": 0.006584991066084642,
+  "joint_1_mse": 0.00012325496098492295,
+  "joint_2_mse": 0.004673491050489247,
+  "joint_3_mse": 0.003747081549838185,
+  "joint_4_mse": 0.0014282085746526718,
+  "joint_5_mse": 0.004075264872051776,
+  "joint_6_mse": 0.002450741498381831,
+  "joint_7_mse": 0.029596894956193866,
+  "epochs": 100,
+  "batch_size": 128,
+  "lr": 0.001,
+  "seed": 42,
+  "standardize_features": true,
+  "checkpoint_path": "D:\\projects\\vla_coreset_project\\outputs\\checkpoints\\mlp_fusion_neighbor.pt"
+}
