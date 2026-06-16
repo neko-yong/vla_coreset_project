@@ -26,6 +26,7 @@ from utils import (
 METHOD_TO_INDEX_FILE = {
     "random": "selected_indices_random.npy",
     "action_change": "selected_indices_action_change.npy",
+    "visual_cluster": "selected_indices_visual_cluster.npy",
     "fusion": "selected_indices_fusion.npy",
 }
 
@@ -69,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--method",
         default="random",
-        choices=("random", "action_change", "fusion", "full"),
+        choices=("random", "action_change", "visual_cluster", "fusion", "full"),
     )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=128)
@@ -285,7 +286,7 @@ def update_results_csv(result_dir: Path, eval_info: dict[str, Any]) -> None:
     else:
         df = pd.DataFrame([new_row])
 
-    order = {"random": 0, "action_change": 1, "fusion": 2, "full": 3}
+    order = {"random": 0, "action_change": 1, "visual_cluster": 2, "fusion": 3, "full": 4}
     df["_order"] = df["method"].map(order).fillna(99)
     df = df.sort_values(["_order", "method"]).drop(columns=["_order"])
     df.to_csv(results_path, index=False)

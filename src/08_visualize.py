@@ -15,10 +15,26 @@ from utils import ensure_dir, get_project_root, get_train_test_masks, set_seed
 
 
 REQUIRED_METHODS = ("random", "action_change", "fusion")
+METHOD_ORDER = ("random", "action_change", "visual_cluster", "fusion", "full")
 METHOD_LABELS = {
     "random": "Random",
     "action_change": "Action-Change",
+    "visual_cluster": "Visual-Cluster",
     "fusion": "Fusion",
+    "full": "Full",
+}
+METHOD_COLORS = {
+    "random": "#9D755D",
+    "action_change": "#F58518",
+    "visual_cluster": "#B279A2",
+    "fusion": "#54A24B",
+    "full": "#4C78A8",
+}
+METHOD_MARKERS = {
+    "random": "o",
+    "action_change": "^",
+    "visual_cluster": "D",
+    "fusion": "s",
 }
 
 
@@ -62,6 +78,8 @@ def load_stage_data(feature_dir: Path, result_dir: Path) -> dict[str, Any]:
         "selected_action": np.load(require_file(result_dir / "selected_indices_action_change.npy")),
         "selected_fusion": np.load(require_file(result_dir / "selected_indices_fusion.npy")),
     }
+    visual_path = result_dir / "selected_indices_visual_cluster.npy"
+    data["selected_visual_cluster"] = np.load(visual_path) if visual_path.exists() else None
 
     missing_methods = [m for m in REQUIRED_METHODS if m not in set(data["results"]["method"])]
     if missing_methods:
@@ -69,6 +87,12 @@ def load_stage_data(feature_dir: Path, result_dir: Path) -> dict[str, Any]:
             f"results.csv must contain methods {REQUIRED_METHODS}. Missing: {missing_methods}"
         )
     return data
+
+
+def available_result_methods(results: pd.DataFrame) -> list[str]:
+    """Return known result methods in a stable visual order."""
+    result_methods = set(results["method"])
+    return [method for method in METHOD_ORDER if method in result_methods]
 
 
 def save_figure(path: Path) -> None:
@@ -82,11 +106,18 @@ def save_figure(path: Path) -> None:
 
 def plot_mse_comparison(results: pd.DataFrame, figure_dir: Path) -> None:
     """Generate the test MSE bar chart."""
-    plot_df = results[results["method"].isin(REQUIRED_METHODS)].copy()
+    methods = available_result_methods(results)
+    plot_df = results[results["method"].isin(methods)].copy()
+    plot_df["method"] = pd.Categorical(plot_df["method"], categories=methods, ordered=True)
+    plot_df = plot_df.sort_values("method")
     plot_df["method_label"] = plot_df["method"].map(METHOD_LABELS)
 
-    plt.figure(figsize=(7.5, 5.0))
-    bars = plt.bar(plot_df["method_label"], plot_df["test_mse"], color=["#4C78A8", "#F58518", "#54A24B"])
+    plt.figure(figsize=(max(7.5, 1.7 * len(plot_df)), 5.0))
+    bars = plt.bar(
+        plot_df["method_label"],
+        plot_df["test_mse"],
+        color=[METHOD_COLORS.get(str(method), "#4C78A8") for method in plot_df["method"]],
+    )
     plt.ylabel("Test MSE")
     plt.xlabel("Sampling Method")
     plt.title("Test MSE Comparison of 10% Sampling Methods")
@@ -141,6 +172,7 @@ def plot_action_change_selected(
     selected_random: np.ndarray,
     selected_action: np.ndarray,
     selected_fusion: np.ndarray,
+    selected_visual_cluster: np.ndarray | None,
     train_episodes: list[int],
     requested_episode: int,
     figure_dir: Path,
@@ -151,6 +183,8 @@ def plot_action_change_selected(
         set(selected_action.astype(int)),
         set(selected_fusion.astype(int)),
     ]
+    if selected_visual_cluster is not None:
+        selected_sets.append(set(selected_visual_cluster.astype(int)))
     episode_id = choose_episode_for_action_plot(
         requested_episode,
         episode_ids,
@@ -169,12 +203,25 @@ def plot_action_change_selected(
     )
 
     marker_specs = [
-        ("Random selected", selected_random, "o", "#9D755D"),
-        ("Action-Change selected", selected_action, "^", "#F58518"),
-        ("Fusion selected", selected_fusion, "s", "#54A24B"),
+        ("Random selected", selected_random, METHOD_MARKERS["random"], METHOD_COLORS["random"]),
+        (
+            "Action-Change selected",
+            selected_action,
+            METHOD_MARKERS["action_change"],
+            METHOD_COLORS["action_change"],
+        ),
+        (
+            "Visual-Cluster selected",
+            selected_visual_cluster,
+            METHOD_MARKERS["visual_cluster"],
+            METHOD_COLORS["visual_cluster"],
+        ),
+        ("Fusion selected", selected_fusion, METHOD_MARKERS["fusion"], METHOD_COLORS["fusion"]),
     ]
     episode_set = set(episode_indices.astype(int))
     for label, selected, marker, color in marker_specs:
+        if selected is None:
+            continue
         selected_in_episode = np.array(
             [idx for idx in selected.astype(int) if idx in episode_set],
             dtype=int,
@@ -206,6 +253,7 @@ def plot_pca_feature_distribution(
     episode_ids: np.ndarray,
     selected_random: np.ndarray,
     selected_fusion: np.ndarray,
+    selected_visual_cluster: np.ndarray | None,
     train_mask: np.ndarray,
     max_pca_samples: int,
     seed: int,
@@ -229,8 +277,14 @@ def plot_pca_feature_distribution(
 
     random_train = selected_random[train_mask[selected_random]]
     fusion_train = selected_fusion[train_mask[selected_fusion]]
+    visual_train = (
+        selected_visual_cluster[train_mask[selected_visual_cluster]]
+        if selected_visual_cluster is not None
+        else None
+    )
     random_xy = pca.transform(features[random_train])
     fusion_xy = pca.transform(features[fusion_train])
+    visual_xy = pca.transform(features[visual_train]) if visual_train is not None else None
 
     plt.figure(figsize=(8.2, 6.2))
     plt.scatter(
@@ -245,7 +299,7 @@ def plot_pca_feature_distribution(
         random_xy[:, 0],
         random_xy[:, 1],
         s=16,
-        color="#9D755D",
+        color=METHOD_COLORS["random"],
         alpha=0.75,
         label="Random selected",
     )
@@ -253,11 +307,21 @@ def plot_pca_feature_distribution(
         fusion_xy[:, 0],
         fusion_xy[:, 1],
         s=18,
-        color="#54A24B",
+        color=METHOD_COLORS["fusion"],
         alpha=0.85,
         marker="^",
         label="Fusion selected",
     )
+    if visual_xy is not None:
+        plt.scatter(
+            visual_xy[:, 0],
+            visual_xy[:, 1],
+            s=18,
+            color=METHOD_COLORS["visual_cluster"],
+            alpha=0.70,
+            marker=METHOD_MARKERS["visual_cluster"],
+            label="Visual-Cluster selected",
+        )
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
     plt.title("PCA Visualization of ResNet18 Features and Selected Samples")
@@ -271,27 +335,37 @@ def plot_selected_frame_distribution(
     selected_random: np.ndarray,
     selected_action: np.ndarray,
     selected_fusion: np.ndarray,
+    selected_visual_cluster: np.ndarray | None,
     train_episodes: list[int],
     figure_dir: Path,
 ) -> None:
     """Plot selected frame counts per training episode for each method."""
     counts: dict[str, list[int]] = {}
-    for method, selected in {
-        "Random": selected_random,
-        "Action-Change": selected_action,
-        "Fusion": selected_fusion,
-    }.items():
+    method_arrays = {
+        "random": selected_random,
+        "action_change": selected_action,
+        "visual_cluster": selected_visual_cluster,
+        "fusion": selected_fusion,
+    }
+    method_arrays = {method: selected for method, selected in method_arrays.items() if selected is not None}
+    for method, selected in method_arrays.items():
         selected_episode_ids = episode_ids[selected.astype(int)]
         counts[method] = [
             int(np.sum(selected_episode_ids == episode_id)) for episode_id in train_episodes
         ]
 
     x = np.arange(len(train_episodes))
-    width = 0.26
+    width = min(0.22, 0.8 / max(len(method_arrays), 1))
     plt.figure(figsize=(12.0, 5.2))
-    plt.bar(x - width, counts["Random"], width, label="Random", color="#9D755D")
-    plt.bar(x, counts["Action-Change"], width, label="Action-Change", color="#F58518")
-    plt.bar(x + width, counts["Fusion"], width, label="Fusion", color="#54A24B")
+    offsets = (np.arange(len(method_arrays)) - (len(method_arrays) - 1) / 2) * width
+    for offset, method in zip(offsets, method_arrays.keys()):
+        plt.bar(
+            x + offset,
+            counts[method],
+            width,
+            label=METHOD_LABELS[method],
+            color=METHOD_COLORS[method],
+        )
     plt.xlabel("Episode Index")
     plt.ylabel("Selected Frame Count")
     plt.title("Selected Frame Distribution across Training Episodes")
@@ -303,22 +377,22 @@ def plot_selected_frame_distribution(
 
 def plot_joint_mse_comparison(results: pd.DataFrame, figure_dir: Path) -> None:
     """Generate per-joint MSE grouped bar chart."""
-    plot_df = results[results["method"].isin(REQUIRED_METHODS)].copy()
+    methods = available_result_methods(results)
+    plot_df = results[results["method"].isin(methods)].copy()
     joints = [f"joint_{idx}_mse" for idx in range(1, 8)]
     x = np.arange(len(joints))
-    width = 0.24
+    width = min(0.18, 0.8 / max(len(methods), 1))
 
-    plt.figure(figsize=(10.0, 5.4))
-    colors = {"random": "#9D755D", "action_change": "#F58518", "fusion": "#54A24B"}
-    offsets = {"random": -width, "action_change": 0.0, "fusion": width}
-    for method in REQUIRED_METHODS:
+    plt.figure(figsize=(max(10.0, 1.5 * len(methods) + 6), 5.4))
+    offsets = (np.arange(len(methods)) - (len(methods) - 1) / 2) * width
+    for offset, method in zip(offsets, methods):
         row = plot_df[plot_df["method"] == method].iloc[0]
         plt.bar(
-            x + offsets[method],
+            x + offset,
             [row[joint] for joint in joints],
             width,
             label=METHOD_LABELS[method],
-            color=colors[method],
+            color=METHOD_COLORS.get(method, "#4C78A8"),
         )
 
     plt.xlabel("Action Dimension")
@@ -362,7 +436,8 @@ def write_report_tables(results: pd.DataFrame, table_dir: Path) -> None:
     if missing:
         raise ValueError(f"results.csv is missing required columns: {missing}")
 
-    summary = results[results["method"].isin(REQUIRED_METHODS)][columns].copy()
+    methods = available_result_methods(results)
+    summary = results[results["method"].isin(methods)][columns].copy()
     csv_path = table_dir / "results_summary.csv"
     md_path = table_dir / "results_summary.md"
     summary.to_csv(csv_path, index=False)
@@ -396,6 +471,7 @@ def main() -> None:
         selected_random=data["selected_random"],
         selected_action=data["selected_action"],
         selected_fusion=data["selected_fusion"],
+        selected_visual_cluster=data["selected_visual_cluster"],
         train_episodes=train_episodes,
         requested_episode=args.episode_to_plot,
         figure_dir=figure_dir,
@@ -405,6 +481,7 @@ def main() -> None:
         episode_ids=data["episode_ids"],
         selected_random=data["selected_random"],
         selected_fusion=data["selected_fusion"],
+        selected_visual_cluster=data["selected_visual_cluster"],
         train_mask=train_mask,
         max_pca_samples=args.max_pca_samples,
         seed=args.seed,
@@ -415,6 +492,7 @@ def main() -> None:
         selected_random=data["selected_random"],
         selected_action=data["selected_action"],
         selected_fusion=data["selected_fusion"],
+        selected_visual_cluster=data["selected_visual_cluster"],
         train_episodes=train_episodes,
         figure_dir=figure_dir,
     )

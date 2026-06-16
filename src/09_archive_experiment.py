@@ -15,6 +15,7 @@ from utils import ensure_dir, get_project_root
 
 
 DEFAULT_EXPERIMENT_NAME = "baseline_v1_random_action_fusion"
+VISUAL_CLUSTER_EXPERIMENT_NAME = "baseline_v2_add_visual_cluster"
 
 
 def parse_args() -> argparse.Namespace:
@@ -151,12 +152,94 @@ def build_observation(results: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
-def generate_experiment_note(results_csv: Path, note_path: Path) -> None:
-    """Generate experiment_note.md from the archived results.csv."""
-    if not results_csv.exists():
-        raise FileNotFoundError(f"Cannot generate experiment note; missing: {results_csv}")
+def compare_methods(results: pd.DataFrame, left: str, right: str) -> str | None:
+    """Compare test MSE of two methods when both are present."""
+    by_method = results.set_index("method")
+    if not {left, right}.issubset(by_method.index):
+        return None
+    left_mse = float(by_method.loc[left, "test_mse"])
+    right_mse = float(by_method.loc[right, "test_mse"])
+    verdict = "is better than" if left_mse < right_mse else "is not better than"
+    return f"- `{left}` {verdict} `{right}` ({left_mse:.6f} vs. {right_mse:.6f})."
 
-    results = pd.read_csv(results_csv)
+
+def build_visual_cluster_observation(results: pd.DataFrame) -> str:
+    """Generate Baseline V2 observations from current results.csv."""
+    ten_percent = results[results["sample_ratio"].astype(float) < 1.0].copy()
+    if ten_percent.empty:
+        raise ValueError("No 10% methods were found in results.csv.")
+
+    best_10 = ten_percent.loc[ten_percent["test_mse"].idxmin()]
+    lines = [
+        f"- Among 10% methods, the lowest test MSE is `{best_10['method']}` "
+        f"({float(best_10['test_mse']):.6f})."
+    ]
+
+    for other in ("random", "action_change", "fusion"):
+        comparison = compare_methods(results, "visual_cluster", other)
+        if comparison is not None:
+            lines.append(comparison)
+
+    by_method = results.set_index("method")
+    if {"visual_cluster", "random"}.issubset(by_method.index):
+        visual = float(by_method.loc["visual_cluster", "test_mse"])
+        random = float(by_method.loc["random", "test_mse"])
+        if visual < random:
+            lines.append(
+                "- Visual-Cluster Only is better than Random 10%, suggesting that "
+                "state coverage from ResNet18 feature clustering can improve coreset quality."
+            )
+        else:
+            lines.append(
+                "- Visual-Cluster Only does not outperform Random 10%, suggesting that "
+                "random 10% sampling may already cover the regular state distribution well."
+            )
+
+    if {"fusion", "visual_cluster"}.issubset(by_method.index):
+        fusion = float(by_method.loc["fusion", "test_mse"])
+        visual = float(by_method.loc["visual_cluster", "test_mse"])
+        if fusion > visual:
+            lines.append(
+                "- Fusion does not exceed Visual-Cluster. In this task, action-change "
+                "scores may overemphasize abrupt action frames and introduce distribution "
+                "bias; preserving visual state coverage alone appears more stable."
+            )
+        else:
+            lines.append(
+                "- Fusion exceeds Visual-Cluster, indicating that adding action surprise "
+                "to visual coverage provides extra value in the current setting."
+            )
+
+    if "full" in by_method.index:
+        full_mse = float(by_method.loc["full", "test_mse"])
+        ten_percent_best_mse = float(best_10["test_mse"])
+        verdict = "is better than" if full_mse < ten_percent_best_mse else "is not better than"
+        lines.append(
+            f"- Full Data 100% {verdict} all 10% methods "
+            f"({full_mse:.6f} vs. best 10% {ten_percent_best_mse:.6f})."
+        )
+
+    return "\n".join(lines)
+
+
+def build_method_explanations(results: pd.DataFrame) -> str:
+    """Describe all methods present in results.csv."""
+    descriptions = {
+        "random": "Random: random 10% baseline.",
+        "action_change": "Action-Change: action surprise from adjacent action changes only.",
+        "fusion": "Fusion: visual clustering coverage plus action surprise.",
+        "visual_cluster": "Visual-Cluster: visual clustering coverage only, with random sampling inside each cluster.",
+        "full": "Full: 100% training set upper-bound reference.",
+    }
+    return "\n".join(
+        f"- {descriptions[method]}"
+        for method in results["method"].tolist()
+        if method in descriptions
+    )
+
+
+def generate_v1_note(results: pd.DataFrame, note_path: Path) -> None:
+    """Generate Baseline V1 experiment note."""
     results_table = build_results_table(results)
     observation = build_observation(results)
 
@@ -230,6 +313,79 @@ This version is the first complete closed-loop baseline experiment. It is archiv
     print(f"Generated experiment note: {note_path}")
 
 
+def generate_v2_note(results: pd.DataFrame, note_path: Path) -> None:
+    """Generate Baseline V2 experiment note with Visual-Cluster ablation."""
+    results_table = build_results_table(results)
+    observation = build_visual_cluster_observation(results)
+    methods = build_method_explanations(results)
+    full_note = (
+        "- Full Data 100% is included as an upper-bound reference."
+        if "full" in set(results["method"])
+        else "- Full Data 100% is not included in the current results.csv."
+    )
+
+    note = f"""# Baseline V2: Add Visual-Cluster Only Coreset
+
+## 1. Experiment Purpose
+
+This version extends `baseline_v1_random_action_fusion` with a Visual-Cluster Only ablation. The goal is to verify whether visual state coverage alone helps coreset selection.
+
+## 2. Difference from Baseline V1
+
+- Baseline V1 contains Random 10%, Action-Change 10%, and Fusion 10%.
+- Baseline V2 adds Visual-Cluster Only 10%.
+{full_note}
+
+## 3. Dataset and Feature Setting
+
+- Dataset: `lerobot/aloha_sim_transfer_cube_human`
+- Image field: `observation.images.top`
+- Action label: `action[:7]`
+- Feature extractor: frozen ImageNet-pretrained ResNet18
+- Feature dimension: 512
+
+## 4. Methods
+
+{methods}
+
+## 5. Main Results
+
+{results_table}
+
+## 6. Observation
+
+{observation}
+
+## 7. Archived Files
+
+- `results.csv`
+- `eval_*.json`
+- `train_log_*.csv`
+- `selected_indices_*.npy`
+- `visual_cluster_sample_table.csv`
+- `mse_comparison.png`
+- `action_change_selected.png`
+- `pca_feature_distribution.png`
+- `selected_frame_distribution.png`
+- `joint_mse_comparison.png`
+- `mlp_*.pt`
+"""
+    note_path.write_text(note, encoding="utf-8")
+    print(f"Generated experiment note: {note_path}")
+
+
+def generate_experiment_note(results_csv: Path, note_path: Path, experiment_name: str) -> None:
+    """Generate experiment_note.md from the archived results.csv."""
+    if not results_csv.exists():
+        raise FileNotFoundError(f"Cannot generate experiment note; missing: {results_csv}")
+
+    results = pd.read_csv(results_csv)
+    if experiment_name == VISUAL_CLUSTER_EXPERIMENT_NAME:
+        generate_v2_note(results, note_path)
+    else:
+        generate_v1_note(results, note_path)
+
+
 def build_manifest(archive_dir: Path) -> list[dict[str, Any]]:
     """Recursively scan archive files and return manifest records."""
     records: list[dict[str, Any]] = []
@@ -285,7 +441,7 @@ def main() -> None:
 
     results_csv = archive_dir / "results" / "results.csv"
     note_path = archive_dir / "experiment_note.md"
-    generate_experiment_note(results_csv, note_path)
+    generate_experiment_note(results_csv, note_path, args.experiment_name)
 
     manifest_path = archive_dir / "file_manifest.json"
     write_manifest(archive_dir, manifest_path)

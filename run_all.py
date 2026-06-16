@@ -20,15 +20,21 @@ def parse_args() -> argparse.Namespace:
             "extract-full",
             "select-random",
             "select-action",
+            "select-visual",
             "select-fusion",
             "select-all",
+            "select-all-plus",
             "train-random",
             "train-action",
+            "train-visual",
             "train-fusion",
             "train-full",
             "train-all",
+            "train-all-plus",
+            "eval-visual",
             "visualize",
             "archive-baseline",
+            "archive-visual",
         ),
         help="Stage to run. Default is the lightweight dataset loading check.",
     )
@@ -69,11 +75,18 @@ def build_commands(project_root: Path, args: argparse.Namespace) -> list[list[st
     selection_scripts = {
         "select-random": ["03_select_random.py"],
         "select-action": ["04_select_action_change.py"],
+        "select-visual": ["05b_select_visual_cluster.py"],
         "select-fusion": ["05_select_fusion_coreset.py"],
         "select-all": [
             "03_select_random.py",
             "04_select_action_change.py",
             "05_select_fusion_coreset.py",
+        ],
+        "select-all-plus": [
+            "03_select_random.py",
+            "04_select_action_change.py",
+            "05_select_fusion_coreset.py",
+            "05b_select_visual_cluster.py",
         ],
     }
     if args.stage in selection_scripts:
@@ -88,13 +101,35 @@ def build_commands(project_root: Path, args: argparse.Namespace) -> list[list[st
     if args.stage == "archive-baseline":
         return [[sys.executable, str(project_root / "src" / "09_archive_experiment.py")]]
 
+    if args.stage == "archive-visual":
+        return [
+            [
+                sys.executable,
+                str(project_root / "src" / "09_archive_experiment.py"),
+                "--experiment_name",
+                "baseline_v2_add_visual_cluster",
+            ]
+        ]
+
     train_methods = {
         "train-random": ["random"],
         "train-action": ["action_change"],
+        "train-visual": ["visual_cluster"],
         "train-fusion": ["fusion"],
         "train-full": ["full"],
         "train-all": ["random", "action_change", "fusion"],
+        "train-all-plus": ["random", "action_change", "fusion", "visual_cluster"],
     }
+    if args.stage == "eval-visual":
+        return [
+            [
+                sys.executable,
+                str(project_root / "src" / "07_evaluate.py"),
+                "--method",
+                "visual_cluster",
+            ]
+        ]
+
     return [
         [
             sys.executable,

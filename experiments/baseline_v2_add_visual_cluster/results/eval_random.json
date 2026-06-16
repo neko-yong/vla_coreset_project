@@ -1,0 +1,20 @@
+{
+  "method": "random",
+  "sample_ratio": 0.1,
+  "num_train_samples": 1600,
+  "num_test_samples": 4000,
+  "test_mse": 0.004198396804118862,
+  "joint_1_mse": 8.535028790356591e-05,
+  "joint_2_mse": 0.002159570448100567,
+  "joint_3_mse": 0.0030279993964359166,
+  "joint_4_mse": 0.0009822618344333023,
+  "joint_5_mse": 0.002050207607448101,
+  "joint_6_mse": 0.0016072793079074472,
+  "joint_7_mse": 0.019476108746603132,
+  "epochs": 100,
+  "batch_size": 128,
+  "lr": 0.001,
+  "seed": 42,
+  "standardize_features": true,
+  "checkpoint_path": "D:\\projects\\vla_coreset_project\\outputs\\checkpoints\\mlp_random.pt"
+}

@@ -1,0 +1,20 @@
+{
+  "method": "full",
+  "sample_ratio": 1.0,
+  "num_train_samples": 16000,
+  "num_test_samples": 4000,
+  "test_mse": 0.003102293778418763,
+  "joint_1_mse": 0.00012395694741280748,
+  "joint_2_mse": 0.000834540466312319,
+  "joint_3_mse": 0.0006041750106960535,
+  "joint_4_mse": 0.0007371293308679014,
+  "joint_5_mse": 0.001656237558228895,
+  "joint_6_mse": 0.001483544656424783,
+  "joint_7_mse": 0.01627647247898858,
+  "epochs": 100,
+  "batch_size": 128,
+  "lr": 0.001,
+  "seed": 42,
+  "standardize_features": true,
+  "checkpoint_path": "D:\\projects\\vla_coreset_project\\outputs\\checkpoints\\mlp_full.pt"
+}
