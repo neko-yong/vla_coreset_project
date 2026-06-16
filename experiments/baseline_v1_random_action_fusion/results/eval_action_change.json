@@ -1,0 +1,20 @@
+{
+  "method": "action_change",
+  "sample_ratio": 0.1,
+  "num_train_samples": 1600,
+  "num_test_samples": 4000,
+  "test_mse": 0.00753144829005136,
+  "joint_1_mse": 0.0002487166009377688,
+  "joint_2_mse": 0.006123217687942087,
+  "joint_3_mse": 0.0034938855394721032,
+  "joint_4_mse": 0.0021516264770179987,
+  "joint_5_mse": 0.008333787508308887,
+  "joint_6_mse": 0.0035014099855907263,
+  "joint_7_mse": 0.02886749423108995,
+  "epochs": 100,
+  "batch_size": 128,
+  "lr": 0.001,
+  "seed": 42,
+  "standardize_features": true,
+  "checkpoint_path": "D:\\projects\\vla_coreset_project\\outputs\\checkpoints\\mlp_action_change.pt"
+}

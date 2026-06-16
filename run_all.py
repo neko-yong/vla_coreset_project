@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
             "train-full",
             "train-all",
             "visualize",
+            "archive-baseline",
         ),
         help="Stage to run. Default is the lightweight dataset loading check.",
     )
@@ -83,6 +84,9 @@ def build_commands(project_root: Path, args: argparse.Namespace) -> list[list[st
 
     if args.stage == "visualize":
         return [[sys.executable, str(project_root / "src" / "08_visualize.py")]]
+
+    if args.stage == "archive-baseline":
+        return [[sys.executable, str(project_root / "src" / "09_archive_experiment.py")]]
 
     train_methods = {
         "train-random": ["random"],
