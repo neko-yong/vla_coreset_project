@@ -1,8 +1,13 @@
-"""Stage 2: extract frozen ResNet18 image features from ALOHA frames.
+"""Stage 2：离线提取 ResNet18 图像特征。
 
-The script reads images from LeRobotDataset, extracts 512-D ImageNet ResNet18
-features from ``observation.images.top``, and saves arrays for later stages.
-It does not train an MLP or run any coreset algorithm.
+输入：LeRobotDataset 中的 `observation.images.top` 图像和 `action` 标签。
+输出：`outputs/features/` 下的 features/actions/episode/frame/timestamp 等 .npy 文件，
+以及 split_info.json 和 feature_info.json。
+
+本阶段使用冻结的 ImageNet 预训练 ResNet18 作为轻量级视觉编码器。去掉最后
+fc 层后，每帧图像得到 512 维视觉特征。离线保存特征可以避免后续多次训练 MLP
+时重复读取视频和重复前向 ResNet18，从而让核心集选择和回归实验更轻量。
+本阶段不训练 ResNet18，只把它作为固定特征提取器。
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ REQUIRED_OUTPUT_FILES = (
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse Stage 2 feature extraction arguments."""
+    """解析 Stage 2 特征提取脚本的命令行参数。"""
     parser = argparse.ArgumentParser(description="Extract ResNet18 features from ALOHA images.")
     parser.add_argument(
         "--dataset_name",
@@ -90,7 +95,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved
@@ -98,12 +103,12 @@ def resolve_project_path(path: str | Path) -> Path:
 
 
 def output_files_exist(output_dir: Path) -> bool:
-    """Return True when all Stage 2 output files already exist."""
+    """检查 Stage 2 所需输出文件是否已经全部存在。"""
     return all((output_dir / filename).exists() for filename in REQUIRED_OUTPUT_FILES)
 
 
 def print_existing_shapes(output_dir: Path) -> None:
-    """Print shapes of existing NumPy feature artifacts."""
+    """打印已有 NumPy 特征文件的 shape，便于确认断点复用状态。"""
     for filename in REQUIRED_OUTPUT_FILES:
         path = output_dir / filename
         if path.suffix == ".npy" and path.exists():
@@ -114,7 +119,7 @@ def print_existing_shapes(output_dir: Path) -> None:
 
 
 def choose_device(device_arg: str) -> torch.device:
-    """Choose the requested torch device."""
+    """根据参数选择 torch 运行设备。"""
     if device_arg == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device_arg == "cuda" and not torch.cuda.is_available():
@@ -123,7 +128,11 @@ def choose_device(device_arg: str) -> torch.device:
 
 
 def build_resnet18_feature_extractor(device: torch.device) -> tuple[torch.nn.Module, str]:
-    """Create a frozen ImageNet-pretrained ResNet18 with an identity fc layer."""
+    """构建冻结的 ImageNet 预训练 ResNet18 特征提取器。
+
+    将最后的分类 fc 层替换为 Identity，使模型输出 512 维图像表示。
+    这样后续 MLP 输入统一为 [N, 512]，而不是 ImageNet 的 1000 类 logits。
+    """
     weights = ResNet18_Weights.IMAGENET1K_V1
     try:
         model = resnet18(weights=weights)
@@ -143,7 +152,12 @@ def build_resnet18_feature_extractor(device: torch.device) -> tuple[torch.nn.Mod
 
 
 def prepare_images(images: torch.Tensor, device: torch.device) -> torch.Tensor:
-    """Resize [B, 3, H, W] images to 224x224 and apply ImageNet normalization."""
+    """将图像 resize 到 224x224，并使用 ImageNet 均值/方差归一化。
+
+    LeRobotDataset 返回的图像为 [3, 480, 640]、范围 [0, 1]。
+    ImageNet 预训练 ResNet18 的输入约定是 224x224 且做 mean/std normalize，
+    因此这里保持与预训练模型一致的预处理。
+    """
     if images.ndim != 4:
         raise ValueError(f"Expected image batch [B, 3, H, W], got shape {tuple(images.shape)}")
     if images.shape[1] != 3:
@@ -160,7 +174,7 @@ def prepare_images(images: torch.Tensor, device: torch.device) -> torch.Tensor:
 
 
 def action_to_7d(action: Any, sample_index: int) -> torch.Tensor:
-    """Convert action to a 7-D single-arm label."""
+    """将原始 action 转换为单臂 7 自由度标签。"""
     action_tensor = torch.as_tensor(to_numpy(action), dtype=torch.float32).reshape(-1)
     if action_tensor.shape[-1] == 14:
         return action_tensor[:7]
@@ -173,7 +187,7 @@ def action_to_7d(action: Any, sample_index: int) -> torch.Tensor:
 
 
 def scalar_to_number(value: Any) -> int | float:
-    """Convert tensor/list/numpy scalar metadata into a Python number."""
+    """将 tensor/list/numpy 标量形式的元信息转换为 Python 数值。"""
     array = np.asarray(to_numpy(value)).reshape(-1)
     if array.size == 0:
         raise ValueError("Cannot convert empty metadata field to scalar.")
@@ -184,7 +198,7 @@ def scalar_to_number(value: Any) -> int | float:
 
 
 class AlohaFeatureDataset(Dataset):
-    """Thin wrapper that exposes image, 7-D action, and frame metadata."""
+    """轻量数据集包装器，统一返回图像、7 维动作和 frame 元信息。"""
 
     def __init__(
         self,
@@ -230,7 +244,7 @@ class AlohaFeatureDataset(Dataset):
 
 
 def tensor_to_numpy(value: torch.Tensor) -> np.ndarray:
-    """Detach a tensor and move it to CPU NumPy."""
+    """将 tensor 从计算图分离并移动到 CPU NumPy。"""
     return value.detach().cpu().numpy()
 
 
@@ -239,7 +253,7 @@ def extract_features(
     dataloader: DataLoader,
     device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Run frozen ResNet18 inference and collect arrays."""
+    """运行冻结 ResNet18 前向推理，并收集特征与元信息数组。"""
     feature_batches: list[np.ndarray] = []
     action_batches: list[np.ndarray] = []
     episode_batches: list[np.ndarray] = []
@@ -269,7 +283,11 @@ def extract_features(
 
 
 def build_split_info(episode_ids: np.ndarray) -> dict[str, Any]:
-    """Build deterministic episode split metadata for later stages."""
+    """保存固定 episode 划分信息，供后续阶段复查。
+
+    当前数据集 50 个 episode，按 episode_index 排序后前 40 个训练、
+    后 10 个测试。后续采样、标准化和训练都必须遵守该划分。
+    """
     sorted_episode_ids = sorted(int(episode_id) for episode_id in np.unique(episode_ids))
     train_count = int(len(sorted_episode_ids) * 0.8)
     train_episodes = sorted_episode_ids[:train_count]
@@ -293,7 +311,7 @@ def save_outputs(
     split_info: dict[str, Any],
     feature_info: dict[str, Any],
 ) -> None:
-    """Save all Stage 2 feature artifacts."""
+    """保存 Stage 2 的全部特征产物。"""
     ensure_dir(output_dir)
     np.save(output_dir / "features.npy", features)
     np.save(output_dir / "actions.npy", actions)

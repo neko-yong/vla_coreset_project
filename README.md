@@ -1,26 +1,32 @@
 # 基于脑启发核心集选择的轻量级 VLA 机械臂动作预测
 
-本项目用于课程设计题目“基于脑启发核心集选择的轻量级 VLA 机械臂动作预测”。课程指定数据集为：
+本项目用于课程设计题目“基于脑启发核心集选择的轻量级 VLA 机械臂动作预测”。实验使用 ALOHA Sim Transfer Cube Human Demonstrations 数据集，构建从单视角图像特征到单臂 7 自由度动作的回归任务，并比较不同 10% 样本选择策略在固定测试集上的 MSE。
+
+课程指定数据集：
 
 ```text
 lerobot/aloha_sim_transfer_cube_human
 ```
 
-最终目标是从 ALOHA Sim Transfer Cube Human Demonstrations 中读取单视角图像，提取视觉特征，构建 `[视觉特征] -> [单臂 7 自由度动作]` 的回归任务，并比较随机 10% 数据和脑启发核心集选择 10% 数据在固定测试集上的 MSE。
-
-## 当前阶段
-
-当前已实现：
+## 已完成内容
 
 - Stage 1：使用 `LeRobotDataset` 检查数据集读取和字段结构。
 - Stage 2：使用冻结 ImageNet 预训练 ResNet18 提取 512 维图像特征。
-- Stage 3：固定 episode 级 train/test 划分，并生成 Random、Action-Change、Fusion Coreset 三种训练样本选择结果。
-- Stage 4：使用统一 MLP 训练，并在固定测试集上评估整体 MSE 和 7 个关节的单独 MSE。
-- Stage 5：生成实验结果可视化图和报告用表格。
+- Stage 3：固定 episode 级 train/test 划分，并生成多种 10% 核心集选择结果。
+- Stage 4：使用统一 MLP 训练，并在固定测试集上评估整体 MSE 和 7 个关节 MSE。
+- Stage 5：生成实验结果图、报告表格和归档材料。
 
-当前核心实验流程已完成。
+已归档实验版本：
 
-## 推荐环境
+```text
+experiments/baseline_v1_random_action_fusion/
+experiments/baseline_v2_add_visual_cluster/
+experiments/baseline_v3_add_fusion_neighbor/
+```
+
+## 环境配置
+
+推荐使用 Python 3.11 的 conda 环境：
 
 ```powershell
 conda create -n vla311 python=3.11 -y
@@ -30,23 +36,35 @@ pip install numpy pandas scikit-learn matplotlib tqdm datasets pillow huggingfac
 pip install lerobot==0.4.4
 ```
 
-也可以使用项目依赖文件安装：
+也可以使用依赖文件：
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-## 数据约定
+## 数据与任务约定
 
-项目主读取方式使用：
+普通 `datasets.load_dataset` 当前只能读取表格字段，无法直接获得图像。因此项目主读取方式使用：
 
 ```python
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 ```
 
-Stage 1 已确认图像字段为 `observation.images.top`，图像 shape 为 `(3, 480, 640)`，范围为 `[0, 1]`。动作字段为 `action`，原始 shape 为 `(14,)`，本项目取 `action[:7]` 作为单臂 7 自由度动作标签。
+关键字段：
 
-固定划分规则：按 `episode_index` 排序，前 80% episode 作为训练集，后 20% episode 作为测试集。当前为训练集 16000 帧、测试集 4000 帧。测试集不参与采样、训练或标准化拟合。
+- 图像字段：`observation.images.top`
+- 图像 shape：`(3, 480, 640)`
+- 图像范围：`[0, 1]`
+- 原始动作字段：`action`
+- 原始动作 shape：`(14,)`
+- 本实验动作标签：`action[:7]`
+
+固定划分规则：
+
+- 按 `episode_index` 排序。
+- 前 40 个 episode 作为训练集，共 16000 帧。
+- 后 10 个 episode 作为测试集，共 4000 帧。
+- 测试集不能参与采样、聚类、训练或标准化拟合。
 
 ## 项目结构
 
@@ -60,15 +78,26 @@ outputs/
 ├── figures/
 └── checkpoints/
 
+report_assets/
+└── result_tables/
+
+experiments/
+├── baseline_v1_random_action_fusion/
+├── baseline_v2_add_visual_cluster/
+└── baseline_v3_add_fusion_neighbor/
+
 src/
 ├── 01_load_dataset.py
 ├── 02_extract_features.py
 ├── 03_select_random.py
 ├── 04_select_action_change.py
 ├── 05_select_fusion_coreset.py
+├── 05b_select_visual_cluster.py
+├── 05c_select_fusion_neighbor.py
 ├── 06_train_mlp.py
 ├── 07_evaluate.py
 ├── 08_visualize.py
+├── 09_archive_experiment.py
 └── utils.py
 
 requirements.txt
@@ -76,14 +105,16 @@ README.md
 run_all.py
 ```
 
-## Stage 1 运行
+## Stage 1：数据读取检查
 
 ```powershell
 python src/01_load_dataset.py --dataset_name lerobot/aloha_sim_transfer_cube_human --cache_dir data/aloha --max_samples 5
 python run_all.py --stage load
 ```
 
-## Stage 2 运行
+该阶段只验证 LeRobotDataset 能否读取图像、动作和 episode/frame 信息，不做训练。
+
+## Stage 2：ResNet18 特征提取
 
 调试提取前 100 帧：
 
@@ -98,7 +129,7 @@ python src/02_extract_features.py --force_extract
 python run_all.py --stage extract-full
 ```
 
-Stage 2 输出位于 `outputs/features/`：
+输出位于 `outputs/features/`：
 
 ```text
 features.npy
@@ -110,35 +141,37 @@ split_info.json
 feature_info.json
 ```
 
-## Stage 3 运行
+## Stage 3：核心集样本选择
+
+基础三种方法：
 
 ```powershell
 python src/03_select_random.py
 python src/04_select_action_change.py
 python src/05_select_fusion_coreset.py
-```
-
-或一次运行三种选择：
-
-```powershell
 python run_all.py --stage select-all
 ```
 
-Stage 3 输出位于 `outputs/results/`：
+消融和扩展方法：
 
-```text
-selected_indices_random.npy
-selected_indices_action_change.npy
-selected_indices_fusion.npy
-random_selection_info.json
-action_change_selection_info.json
-fusion_selection_info.json
-fusion_sample_table.csv
+```powershell
+python src/05b_select_visual_cluster.py
+python src/05c_select_fusion_neighbor.py
+python run_all.py --stage select-visual
+python run_all.py --stage select-fusion-neighbor
 ```
 
-## Stage 4 运行
+方法说明：
 
-训练三种 10% 方法：
+- `random`：随机 10% 基准，无认知筛选。
+- `action_change`：基于相邻动作变化的动作惊奇度。
+- `visual_cluster`：仅使用视觉聚类覆盖，簇内随机采样。
+- `fusion`：视觉状态覆盖 + 动作惊奇度。
+- `fusion_neighbor`：在 Fusion anchor 周围加入同一 episode 内的时间邻域。
+
+## Stage 4：MLP 训练与测试 MSE
+
+训练基础三种 10% 方法：
 
 ```powershell
 python run_all.py --stage train-all
@@ -149,36 +182,17 @@ python run_all.py --stage train-all
 ```powershell
 python src/06_train_mlp.py --method random
 python src/06_train_mlp.py --method action_change
+python src/06_train_mlp.py --method visual_cluster
 python src/06_train_mlp.py --method fusion
-```
-
-可选 full data 上限参考：
-
-```powershell
+python src/06_train_mlp.py --method fusion_neighbor
 python src/06_train_mlp.py --method full
 ```
 
-也可以单独重新评估某个 checkpoint：
+重新评估 checkpoint：
 
 ```powershell
 python src/07_evaluate.py --method random
-python src/07_evaluate.py --method action_change
-python src/07_evaluate.py --method fusion
-```
-
-Stage 4 输出：
-
-```text
-outputs/results/results.csv
-outputs/results/eval_random.json
-outputs/results/eval_action_change.json
-outputs/results/eval_fusion.json
-outputs/results/train_log_random.csv
-outputs/results/train_log_action_change.csv
-outputs/results/train_log_fusion.csv
-outputs/checkpoints/mlp_random.pt
-outputs/checkpoints/mlp_action_change.pt
-outputs/checkpoints/mlp_fusion.pt
+python src/07_evaluate.py --method fusion_neighbor
 ```
 
 统一 MLP 结构：
@@ -192,23 +206,25 @@ ReLU
 Linear(128, 7)
 ```
 
-所有方法使用相同模型结构和默认训练参数。特征标准化只用当前方法的训练样本拟合 `StandardScaler`，再 transform 当前训练样本和固定测试集；动作标签不做标准化。
+所有方法使用同一模型结构和训练参数；特征标准化只使用当前方法训练样本拟合，测试集不参与。
 
-## Stage 5 运行
+主要输出：
 
-生成可视化图和报告表格：
+```text
+outputs/results/results.csv
+outputs/results/eval_*.json
+outputs/results/train_log_*.csv
+outputs/checkpoints/mlp_*.pt
+```
+
+## Stage 5：可视化与报告素材
 
 ```powershell
 python src/08_visualize.py
-```
-
-或：
-
-```powershell
 python run_all.py --stage visualize
 ```
 
-Stage 5 输出：
+输出：
 
 ```text
 outputs/figures/mse_comparison.png
@@ -220,183 +236,55 @@ report_assets/result_tables/results_summary.csv
 report_assets/result_tables/results_summary.md
 ```
 
-## 后续计划
+## 实验归档
 
-后续可继续整理最终报告文字、补充实验分析和课程展示材料。
+归档脚本只复制和整理当前结果，不重新运行实验。
 
-## Archive Current Baseline
-
-当前基础实验版本命名为：
-
-```text
-baseline_v1_random_action_fusion
-```
-
-归档当前结果：
+Baseline V1：
 
 ```powershell
-python src/09_archive_experiment.py
-```
-
-或：
-
-```powershell
+python src/09_archive_experiment.py --experiment_name baseline_v1_random_action_fusion
 python run_all.py --stage archive-baseline
 ```
 
-归档目录：
-
-```text
-experiments/baseline_v1_random_action_fusion/
-```
-
-如果该目录已存在，脚本默认不会覆盖。需要重新归档时使用：
-
-```powershell
-python src/09_archive_experiment.py --overwrite
-```
-
-## Visual-Cluster Only Ablation
-
-Visual-Cluster Only 是 Fusion Coreset 的消融对照，用于验证“视觉状态覆盖”本身是否有助于动作预测。它只使用训练集 ResNet18 特征进行 KMeans 聚类，并按簇内样本数量分配 10% 采样名额；簇内随机选样，不使用 action-change score。
-
-运行 Visual-Cluster 样本选择：
-
-```powershell
-python src/05b_select_visual_cluster.py
-```
-
-训练 Visual-Cluster MLP：
-
-```powershell
-python src/06_train_mlp.py --method visual_cluster
-```
-
-或使用总入口：
-
-```powershell
-python run_all.py --stage select-visual
-python run_all.py --stage train-visual
-python run_all.py --stage eval-visual
-```
-
-如果需要把 Visual-Cluster 加入完整消融流程：
-
-```powershell
-python run_all.py --stage select-all-plus
-python run_all.py --stage train-all-plus
-python run_all.py --stage visualize
-```
-
-新增输出包括：
-
-```text
-outputs/results/visual_cluster_ids.npy
-outputs/results/selected_indices_visual_cluster.npy
-outputs/results/visual_cluster_selection_info.json
-outputs/results/visual_cluster_sample_table.csv
-outputs/results/eval_visual_cluster.json
-outputs/results/train_log_visual_cluster.csv
-outputs/checkpoints/mlp_visual_cluster.pt
-```
-
-## Archive Visual-Cluster Baseline V2
-
-Visual-Cluster 消融实验完成后，可归档为：
-
-```text
-baseline_v2_add_visual_cluster
-```
-
-运行：
+Baseline V2：
 
 ```powershell
 python src/09_archive_experiment.py --experiment_name baseline_v2_add_visual_cluster
-```
-
-或：
-
-```powershell
 python run_all.py --stage archive-visual
 ```
 
-归档目录：
-
-```text
-experiments/baseline_v2_add_visual_cluster/
-```
-
-如果该目录已存在，默认不会覆盖。需要重建时使用：
-
-```powershell
-python src/09_archive_experiment.py --experiment_name baseline_v2_add_visual_cluster --overwrite
-```
-
-## Fusion + Temporal Neighbor Coreset
-
-Fusion + Temporal Neighbor 在 Fusion anchor 的基础上加入同一 episode 内的邻域帧。默认 `neighbor_window=1`，即对每个 anchor 尝试加入 `t-1, t, t+1`，但不会跨 episode，也不会加入测试集。最终仍严格选择训练集 10% 样本。
-
-运行样本选择：
-
-```powershell
-python src/05c_select_fusion_neighbor.py
-```
-
-训练：
-
-```powershell
-python src/06_train_mlp.py --method fusion_neighbor
-```
-
-或使用总入口：
-
-```powershell
-python run_all.py --stage select-fusion-neighbor
-python run_all.py --stage train-fusion-neighbor
-python run_all.py --stage eval-fusion-neighbor
-```
-
-新增输出包括：
-
-```text
-outputs/results/fusion_neighbor_cluster_ids.npy
-outputs/results/fusion_neighbor_action_scores.npy
-outputs/results/selected_indices_fusion_neighbor.npy
-outputs/results/fusion_neighbor_selection_info.json
-outputs/results/fusion_neighbor_sample_table.csv
-outputs/results/eval_fusion_neighbor.json
-outputs/results/train_log_fusion_neighbor.csv
-outputs/checkpoints/mlp_fusion_neighbor.pt
-```
-
-## Archive Fusion-Neighbor Baseline V3
-
-Fusion + Temporal Neighbor 实验完成后，可归档为：
-
-```text
-baseline_v3_add_fusion_neighbor
-```
-
-运行：
+Baseline V3：
 
 ```powershell
 python src/09_archive_experiment.py --experiment_name baseline_v3_add_fusion_neighbor
-```
-
-或：
-
-```powershell
 python run_all.py --stage archive-fusion-neighbor
 ```
 
-归档目录：
-
-```text
-experiments/baseline_v3_add_fusion_neighbor/
-```
-
-如果该目录已存在，默认不会覆盖。需要重建时使用：
+如果归档目录已存在，默认不覆盖。需要重建时显式添加：
 
 ```powershell
-python src/09_archive_experiment.py --experiment_name baseline_v3_add_fusion_neighbor --overwrite
+--overwrite
+```
+
+每个归档目录包含：
+
+```text
+results/
+figures/
+checkpoints/
+report_assets/
+experiment_note.md
+file_manifest.json
+README_snapshot.md
+```
+
+## 统一入口
+
+`run_all.py` 提供分阶段运行入口，默认只执行轻量数据读取检查，避免误触发耗时任务或覆盖结果。
+
+查看支持的 stage：
+
+```powershell
+python run_all.py --help
 ```

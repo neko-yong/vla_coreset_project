@@ -1,4 +1,17 @@
-"""Stage 5: generate report-ready figures and result tables."""
+"""Stage 5：生成实验可视化图与报告素材。
+
+输入：Stage 2 的特征数组、Stage 3 的选择结果、Stage 4 的 `results.csv`。
+输出：`outputs/figures/` 下的报告图，以及 `report_assets/result_tables/`
+下的结果表格。
+
+本脚本不重新训练、不重新采样，只把已有结果整理成课程报告可直接使用的图表。
+各图含义：
+- mse_comparison.png：比较不同采样方法的整体测试 MSE；
+- action_change_selected.png：展示动作惊奇度曲线及采样点；
+- pca_feature_distribution.png：展示视觉特征空间覆盖情况；
+- selected_frame_distribution.png：展示各方法在 episode 上的采样分布；
+- joint_mse_comparison.png：分析不同动作维度的预测难度。
+"""
 
 from __future__ import annotations
 
@@ -42,7 +55,7 @@ METHOD_MARKERS = {
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse visualization arguments."""
+    """解析可视化脚本参数。"""
     parser = argparse.ArgumentParser(description="Generate Stage 5 report figures.")
     parser.add_argument("--feature_dir", default="outputs/features")
     parser.add_argument("--result_dir", default="outputs/results")
@@ -54,7 +67,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved
@@ -62,14 +75,14 @@ def resolve_project_path(path: str | Path) -> Path:
 
 
 def require_file(path: Path) -> Path:
-    """Raise a clear error when an expected input file is missing."""
+    """检查输入文件是否存在；缺失时给出清晰错误。"""
     if not path.exists():
         raise FileNotFoundError(f"Required input file is missing: {path}")
     return path
 
 
 def load_stage_data(feature_dir: Path, result_dir: Path) -> dict[str, Any]:
-    """Load feature arrays, result CSV, scores, and selected index files."""
+    """读取特征数组、结果表、分数文件和采样索引文件。"""
     data = {
         "features": np.load(require_file(feature_dir / "features.npy")),
         "actions": np.load(require_file(feature_dir / "actions.npy")),
@@ -95,13 +108,13 @@ def load_stage_data(feature_dir: Path, result_dir: Path) -> dict[str, Any]:
 
 
 def available_result_methods(results: pd.DataFrame) -> list[str]:
-    """Return known result methods in a stable visual order."""
+    """按稳定顺序返回当前 results.csv 中已有的方法。"""
     result_methods = set(results["method"])
     return [method for method in METHOD_ORDER if method in result_methods]
 
 
 def save_figure(path: Path) -> None:
-    """Save the active matplotlib figure at report quality."""
+    """以报告质量保存当前 matplotlib 图像。"""
     ensure_dir(path.parent)
     plt.tight_layout()
     plt.savefig(path, dpi=300, bbox_inches="tight")
@@ -110,7 +123,7 @@ def save_figure(path: Path) -> None:
 
 
 def plot_mse_comparison(results: pd.DataFrame, figure_dir: Path) -> None:
-    """Generate the test MSE bar chart."""
+    """生成整体测试 MSE 对比柱状图，用于报告中展示主结果。"""
     methods = available_result_methods(results)
     plot_df = results[results["method"].isin(methods)].copy()
     plot_df["method"] = pd.Categorical(plot_df["method"], categories=methods, ordered=True)
@@ -148,7 +161,7 @@ def choose_episode_for_action_plot(
     train_episodes: list[int],
     selected_sets: list[set[int]],
 ) -> int:
-    """Choose a training episode that has selected points for the action plot."""
+    """为动作变化曲线选择一个包含采样点的训练 episode。"""
     def has_selected_points(episode_id: int) -> bool:
         episode_indices = set(np.flatnonzero(episode_ids == episode_id).astype(int))
         return any(bool(episode_indices & selected_set) for selected_set in selected_sets)
@@ -183,7 +196,7 @@ def plot_action_change_selected(
     requested_episode: int,
     figure_dir: Path,
 ) -> None:
-    """Plot action-change scores and selected frames for one training episode."""
+    """绘制单个 episode 的动作变化分数曲线和各方法采样点。"""
     selected_sets = [
         set(selected_random.astype(int)),
         set(selected_action.astype(int)),
@@ -274,7 +287,11 @@ def plot_pca_feature_distribution(
     seed: int,
     figure_dir: Path,
 ) -> None:
-    """Plot PCA of training ResNet18 features with selected samples highlighted."""
+    """绘制训练集 ResNet18 特征的 PCA 分布。
+
+    PCA 只在训练集样本上 fit，避免测试集特征分布参与可视化降维。
+    高亮采样点用于观察不同方法是否覆盖了更广泛的视觉状态。
+    """
     if max_pca_samples <= 0:
         raise ValueError(f"max_pca_samples must be positive, got {max_pca_samples}.")
 
@@ -371,7 +388,10 @@ def plot_selected_frame_distribution(
     train_episodes: list[int],
     figure_dir: Path,
 ) -> None:
-    """Plot selected frame counts per training episode for each method."""
+    """统计每个训练 episode 中被选中的帧数。
+
+    该图用于观察某种方法是否过度集中在少数 episode，或是否保持较均衡的时序覆盖。
+    """
     counts: dict[str, list[int]] = {}
     method_arrays = {
         "random": selected_random,
@@ -409,7 +429,7 @@ def plot_selected_frame_distribution(
 
 
 def plot_joint_mse_comparison(results: pd.DataFrame, figure_dir: Path) -> None:
-    """Generate per-joint MSE grouped bar chart."""
+    """生成每个动作维度的 MSE 对比图，用于分析哪些关节更难预测。"""
     methods = available_result_methods(results)
     plot_df = results[results["method"].isin(methods)].copy()
     joints = [f"joint_{idx}_mse" for idx in range(1, 8)]
@@ -438,7 +458,7 @@ def plot_joint_mse_comparison(results: pd.DataFrame, figure_dir: Path) -> None:
 
 
 def dataframe_to_markdown(df: pd.DataFrame) -> str:
-    """Create a dependency-free Markdown table."""
+    """生成不依赖额外库的 Markdown 表格。"""
     headers = list(df.columns)
     rows = []
     rows.append("| " + " | ".join(headers) + " |")
@@ -449,7 +469,7 @@ def dataframe_to_markdown(df: pd.DataFrame) -> str:
 
 
 def write_report_tables(results: pd.DataFrame, table_dir: Path) -> None:
-    """Write CSV and Markdown summary tables for the report."""
+    """写出报告用 CSV 和 Markdown 结果汇总表。"""
     ensure_dir(table_dir)
     columns = [
         "method",

@@ -1,9 +1,11 @@
-"""Stage 3c: Coverage-aware Action-Surprise Coreset Selection.
+"""Stage 3c：覆盖感知的动作惊奇度核心集选择（Fusion Coreset）。
 
-The method clusters training visual features for state coverage, then selects
-high action-change frames inside each cluster. Action change corresponds to
-prediction error / action surprise, while clustering avoids selecting only a
-small set of visually similar high-motion frames.
+输入：Stage 2 的 ResNet18 特征、动作标签和 episode/frame 元信息。
+输出：Fusion 聚类 id、动作惊奇度分数、选中样本索引、JSON 说明和样本表。
+
+该方法同时考虑两类信息：KMeans 聚类用于近似视觉状态分布覆盖，簇内按
+action_change_score 选择用于保留高动作信息量帧。测试集不参与 KMeans fit、
+分数选择或预算分配。该方法对应本项目的“覆盖感知的动作惊奇度核心集选择”。
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from utils import (
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse Fusion Coreset arguments."""
+    """解析 Fusion Coreset 采样参数。"""
     parser = argparse.ArgumentParser(
         description="Run Coverage-aware Action-Surprise Coreset Selection."
     )
@@ -42,7 +44,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved
@@ -50,7 +52,7 @@ def resolve_project_path(path: str | Path) -> Path:
 
 
 def selection_budget(num_train_samples: int, sample_ratio: float) -> int:
-    """Return the exact number of samples selected from the training set."""
+    """根据训练集规模和采样比例计算精确采样数量。"""
     if not 0 < sample_ratio <= 1:
         raise ValueError(f"sample_ratio must be in (0, 1], got {sample_ratio}.")
     return max(1, int(round(num_train_samples * sample_ratio)))
@@ -62,7 +64,11 @@ def select_by_cluster_quota(
     train_scores: np.ndarray,
     budget: int,
 ) -> np.ndarray:
-    """Select high-score samples within proportional cluster quotas."""
+    """按视觉簇配额选择高动作惊奇度样本。
+
+    每个簇按训练样本数量分配采样预算，体现“状态覆盖”；簇内再按动作变化
+    分数从高到低选择，体现“动作惊奇度”。最终输出全局样本索引。
+    """
     quotas = allocate_cluster_quotas(train_cluster_ids, budget)
     selected_parts: list[np.ndarray] = []
 
@@ -103,7 +109,7 @@ def build_sample_table(
     action_scores_full: np.ndarray,
     selected_indices: np.ndarray,
 ) -> pd.DataFrame:
-    """Build the Fusion Coreset sample table for training candidates."""
+    """构建 Fusion Coreset 的训练候选样本表。"""
     selected_set = set(int(index) for index in selected_indices)
     return pd.DataFrame(
         {
@@ -145,6 +151,7 @@ def main() -> None:
         )
 
     train_features = features[train_indices]
+    # 只使用训练集特征进行 KMeans 聚类，避免测试集分布信息泄漏到采样决策。
     print("Fitting KMeans on training features only.")
     print(f"Train samples: {train_mask.sum()}")
     print(f"Test samples: {test_mask.sum()}")

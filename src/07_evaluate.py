@@ -1,4 +1,12 @@
-"""Stage 4 helper: reload a trained MLP checkpoint and evaluate test MSE."""
+"""Stage 4 辅助脚本：加载 checkpoint 并重新评估测试集 MSE。
+
+输入：`outputs/checkpoints/mlp_{method}.pt` 与 Stage 2 特征数组。
+输出：更新对应 `eval_{method}.json` 和 `results.csv` 中该方法的评估行。
+
+该脚本不重新训练模型，只复用已保存的 MLP 权重和训练阶段保存的 scaler 参数。
+评估时必须使用与训练相同的固定 train/test episode 划分，且测试集仍不能参与
+标准化拟合。
+"""
 
 from __future__ import annotations
 
@@ -13,7 +21,11 @@ from utils import ensure_dir, get_project_root, save_json, set_seed
 
 
 def load_train_module() -> Any:
-    """Load 06_train_mlp.py as a module despite its numeric filename prefix."""
+    """动态加载训练模块。
+
+    文件名 `06_train_mlp.py` 以数字开头，不能用普通 import 语法直接导入。
+    这里通过 importlib 复用 MLP 类、scaler 处理和 evaluate_model，避免评估逻辑重复。
+    """
     module_path = Path(__file__).resolve().parent / "06_train_mlp.py"
     spec = importlib.util.spec_from_file_location("stage4_train_mlp", module_path)
     if spec is None or spec.loader is None:
@@ -24,7 +36,7 @@ def load_train_module() -> Any:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse standalone evaluation arguments."""
+    """解析独立评估脚本参数。"""
     parser = argparse.ArgumentParser(description="Evaluate a saved MLP checkpoint.")
     parser.add_argument(
         "--method",
@@ -39,7 +51,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved

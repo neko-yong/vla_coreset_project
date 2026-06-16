@@ -1,4 +1,14 @@
-"""Stage 4: train a unified MLP and evaluate fixed test-set MSE."""
+"""Stage 4：统一 MLP 训练与固定测试集 MSE 评估。
+
+输入：Stage 2 的 `features.npy/actions.npy/episode_ids.npy`，以及 Stage 3
+各方法生成的 `selected_indices_*.npy`。
+输出：`outputs/checkpoints/mlp_{method}.pt`、训练日志 CSV、评估 JSON 和
+统一汇总表 `outputs/results/results.csv`。
+
+本阶段用于比较不同核心集选择方法的动作预测效果。所有方法必须使用完全相同
+的 MLP 结构和训练参数，保证性能差异主要来自样本选择，而不是模型调参。
+输入是 512 维 ResNet18 特征，输出是单臂 7 自由度动作。
+"""
 
 from __future__ import annotations
 
@@ -33,7 +43,11 @@ METHOD_TO_INDEX_FILE = {
 
 
 class MLPRegressor(nn.Module):
-    """Shared MLP architecture for every sampling method."""
+    """所有方法共享的 MLP 回归模型。
+
+    统一结构为 512 -> 256 -> 128 -> 7。保持模型结构一致，是比较不同
+    核心集方法的基本公平性要求。
+    """
 
     def __init__(self, input_dim: int = 512, output_dim: int = 7) -> None:
         super().__init__()
@@ -51,7 +65,7 @@ class MLPRegressor(nn.Module):
 
 
 def parse_bool(value: str | bool) -> bool:
-    """Parse a CLI boolean value."""
+    """解析命令行中的布尔值。"""
     if isinstance(value, bool):
         return value
     value = value.lower()
@@ -63,7 +77,7 @@ def parse_bool(value: str | bool) -> bool:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse Stage 4 training arguments."""
+    """解析 Stage 4 MLP 训练参数。"""
     parser = argparse.ArgumentParser(description="Train MLP on selected VLA features.")
     parser.add_argument("--feature_dir", default="outputs/features")
     parser.add_argument("--result_dir", default="outputs/results")
@@ -84,7 +98,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved
@@ -92,7 +106,7 @@ def resolve_project_path(path: str | Path) -> Path:
 
 
 def choose_device(device_arg: str) -> torch.device:
-    """Choose the requested torch device."""
+    """根据参数选择 torch 运行设备。"""
     if device_arg == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device_arg == "cuda" and not torch.cuda.is_available():
@@ -106,7 +120,11 @@ def get_method_train_indices(
     train_mask: np.ndarray,
     result_dir: Path,
 ) -> np.ndarray:
-    """Return training indices for one method and verify they are train-only."""
+    """读取指定方法的训练索引，并检查其全部来自训练集。
+
+    selected_indices 是核心集选择结果。如果其中混入测试集样本，训练阶段必须
+    直接报错，因为这会破坏固定测试集评估的有效性。
+    """
     if method == "full":
         return train_indices.astype(np.int64)
 
@@ -134,7 +152,7 @@ def get_method_train_indices(
 
 
 def sample_ratio_for_method(method: str, num_train_samples: int, full_train_count: int) -> float:
-    """Compute the selected fraction relative to the full training split."""
+    """计算当前方法相对于完整训练集的采样比例。"""
     if method == "full":
         return 1.0
     return float(num_train_samples / full_train_count)
@@ -145,7 +163,11 @@ def standardize_features(
     test_features: np.ndarray,
     enabled: bool,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    """Fit StandardScaler on train features only, then transform train/test."""
+    """只用当前方法训练样本拟合 StandardScaler。
+
+    测试集不能参与 scaler.fit，否则会发生数据泄漏。动作标签不做标准化，
+    因而 test_mse 直接反映原始 7 维动作空间中的平均平方误差。
+    """
     if not enabled:
         return train_features.astype(np.float32), test_features.astype(np.float32), {
             "standardize_features": False,
@@ -164,7 +186,7 @@ def standardize_features(
 
 
 def apply_checkpoint_scaler(features: np.ndarray, checkpoint: dict[str, Any]) -> np.ndarray:
-    """Transform features using scaler parameters saved in a checkpoint."""
+    """使用 checkpoint 中保存的 scaler 参数变换特征。"""
     if not checkpoint.get("standardize_features", True):
         return features.astype(np.float32)
 
@@ -183,7 +205,7 @@ def make_loader(
     batch_size: int,
     shuffle: bool,
 ) -> DataLoader:
-    """Create a tensor DataLoader for MLP regression."""
+    """为 MLP 回归任务创建 TensorDataset DataLoader。"""
     dataset = TensorDataset(
         torch.from_numpy(features.astype(np.float32)),
         torch.from_numpy(actions.astype(np.float32)),
@@ -199,7 +221,7 @@ def train_model(
     lr: float,
     weight_decay: float,
 ) -> list[dict[str, float]]:
-    """Train the MLP with MSE loss and Adam."""
+    """使用 MSELoss 和 Adam 训练 MLP。"""
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     logs: list[dict[str, float]] = []
@@ -233,7 +255,7 @@ def evaluate_model(
     test_loader: DataLoader,
     device: torch.device,
 ) -> dict[str, float]:
-    """Evaluate overall and per-joint MSE on the fixed test set."""
+    """在固定测试集上评估整体 MSE 和每个关节的 MSE。"""
     model.eval()
     squared_error_sum = torch.zeros(7, dtype=torch.float64)
     total_samples = 0
@@ -258,7 +280,11 @@ def evaluate_model(
 
 
 def update_results_csv(result_dir: Path, eval_info: dict[str, Any]) -> None:
-    """Insert or replace one method row in outputs/results/results.csv."""
+    """更新统一结果表。
+
+    同一个 method 重复运行时覆盖旧行，避免 results.csv 中出现重复方法。
+    该文件是后续可视化、归档和报告表格的主要数据来源。
+    """
     results_path = result_dir / "results.csv"
     row_fields = [
         "method",
@@ -302,7 +328,7 @@ def update_results_csv(result_dir: Path, eval_info: dict[str, Any]) -> None:
 
 
 def load_arrays_and_split(feature_dir: Path) -> dict[str, Any]:
-    """Load features/actions and rebuild the fixed train/test split."""
+    """读取特征和动作数组，并重建固定 train/test 划分。"""
     arrays = load_feature_arrays(feature_dir)
     features = arrays["features"].astype(np.float32)
     actions = arrays["actions"].astype(np.float32)

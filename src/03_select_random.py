@@ -1,4 +1,12 @@
-"""Stage 3a: random 10% frame selection inside the fixed training split."""
+"""Stage 3a：Random 10% 基准采样。
+
+输入：`outputs/features/` 中的特征、动作和 episode id。
+输出：`selected_indices_random.npy` 与 `random_selection_info.json`。
+
+Random 是最重要的基准方法之一，用来衡量“没有认知筛选”的 10% 数据表现。
+采样只允许发生在训练 episode 内，测试 episode 绝不能参与采样。固定 seed=42
+用于保证随机选择可复现。
+"""
 
 from __future__ import annotations
 
@@ -19,7 +27,7 @@ from utils import (
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse random baseline selection arguments."""
+    """解析 Random 基准采样参数。"""
     parser = argparse.ArgumentParser(description="Select random training frames.")
     parser.add_argument("--feature_dir", default="outputs/features", help="Stage 2 feature directory.")
     parser.add_argument("--output_dir", default="outputs/results", help="Directory for selection files.")
@@ -29,7 +37,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved
@@ -37,7 +45,7 @@ def resolve_project_path(path: str | Path) -> Path:
 
 
 def selection_budget(num_train_samples: int, sample_ratio: float) -> int:
-    """Return the exact number of samples selected from the training set."""
+    """根据训练集规模和采样比例计算精确采样数量。"""
     if not 0 < sample_ratio <= 1:
         raise ValueError(f"sample_ratio must be in (0, 1], got {sample_ratio}.")
     return max(1, int(round(num_train_samples * sample_ratio)))
@@ -56,6 +64,7 @@ def main() -> None:
     train_indices = np.flatnonzero(train_mask)
     budget = selection_budget(len(train_indices), args.sample_ratio)
 
+    # 只从训练集 frame 中随机选择；测试集保留到最终 MSE 评估，避免信息泄漏。
     rng = np.random.default_rng(args.seed)
     selected_indices = np.sort(rng.choice(train_indices, size=budget, replace=False))
 

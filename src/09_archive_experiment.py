@@ -1,4 +1,15 @@
-"""Archive the current baseline experiment outputs for future comparison."""
+"""Stage 6：实验版本归档脚本。
+
+输入：当前 `outputs/results/`、`outputs/figures/`、`outputs/checkpoints/`、
+`report_assets/` 和 README。
+输出：`experiments/{experiment_name}/` 下的结果副本、experiment_note.md、
+file_manifest.json 和 README_snapshot.md。
+
+该脚本只复制和整理已有结果，不重新运行训练、特征提取或样本选择。归档用于保存
+baseline_v1/v2/v3 等不同实验版本，便于后续优化实验与历史结果做可追溯比较。
+`file_manifest.json` 记录归档文件清单和大小，`experiment_note.md` 记录实验目的、
+方法差异和自动生成的结果观察。默认不覆盖已有归档，只有传入 --overwrite 才会重建。
+"""
 
 from __future__ import annotations
 
@@ -20,7 +31,7 @@ FUSION_NEIGHBOR_EXPERIMENT_NAME = "baseline_v3_add_fusion_neighbor"
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse archive options."""
+    """解析归档脚本参数。"""
     parser = argparse.ArgumentParser(description="Archive current baseline experiment results.")
     parser.add_argument("--experiment_name", default=DEFAULT_EXPERIMENT_NAME)
     parser.add_argument(
@@ -32,7 +43,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def copy_directory(src: Path, dst: Path) -> bool:
-    """Copy a directory tree, warning and continuing if the source is missing."""
+    """复制目录树；源目录缺失时只警告并继续。
+
+    归档脚本应尽量稳健：某些可选目录不存在时，不应影响其他结果的保存。
+    """
     if not src.exists():
         print(f"WARNING: source directory does not exist, skipped: {src}")
         return False
@@ -42,7 +56,7 @@ def copy_directory(src: Path, dst: Path) -> bool:
 
 
 def copy_file(src: Path, dst: Path) -> bool:
-    """Copy one file, warning and continuing if the source is missing."""
+    """复制单个文件；源文件缺失时只警告并继续。"""
     if not src.exists():
         print(f"WARNING: source file does not exist, skipped: {src}")
         return False
@@ -53,7 +67,7 @@ def copy_file(src: Path, dst: Path) -> bool:
 
 
 def format_float(value: Any) -> str:
-    """Format numeric values for report tables."""
+    """将数值格式化为报告表格中的字符串。"""
     try:
         return f"{float(value):.6f}"
     except (TypeError, ValueError):
@@ -61,7 +75,7 @@ def format_float(value: Any) -> str:
 
 
 def dataframe_to_markdown(df: pd.DataFrame) -> str:
-    """Create a simple Markdown table without optional tabulate dependency."""
+    """生成简单 Markdown 表格，避免依赖可选的 tabulate 包。"""
     headers = list(df.columns)
     lines = [
         "| " + " | ".join(headers) + " |",
@@ -73,7 +87,7 @@ def dataframe_to_markdown(df: pd.DataFrame) -> str:
 
 
 def build_results_table(results: pd.DataFrame) -> str:
-    """Build a Markdown table from results.csv with MSE values rounded."""
+    """从 results.csv 生成 Markdown 结果表，并将 MSE 保留 6 位小数。"""
     columns = [
         "method",
         "sample_ratio",
@@ -100,7 +114,7 @@ def build_results_table(results: pd.DataFrame) -> str:
 
 
 def get_common_setting(results: pd.DataFrame, column: str, default: str = "not recorded") -> str:
-    """Read a common training setting from results.csv when present."""
+    """从 results.csv 中读取通用训练设置；不存在时返回默认文本。"""
     if column not in results.columns or results.empty:
         return default
     values = results[column].dropna().unique()
@@ -115,7 +129,7 @@ def get_common_setting(results: pd.DataFrame, column: str, default: str = "not r
 
 
 def build_observation(results: pd.DataFrame) -> str:
-    """Generate observations directly from results.csv."""
+    """根据 results.csv 自动生成 baseline_v1 观察结论。"""
     if "method" not in results.columns or "test_mse" not in results.columns:
         raise ValueError("results.csv must contain method and test_mse columns.")
 
@@ -154,7 +168,7 @@ def build_observation(results: pd.DataFrame) -> str:
 
 
 def compare_methods(results: pd.DataFrame, left: str, right: str) -> str | None:
-    """Compare test MSE of two methods when both are present."""
+    """当两个方法都存在时，比较二者 test MSE。"""
     by_method = results.set_index("method")
     if not {left, right}.issubset(by_method.index):
         return None
@@ -165,7 +179,7 @@ def compare_methods(results: pd.DataFrame, left: str, right: str) -> str | None:
 
 
 def build_visual_cluster_observation(results: pd.DataFrame) -> str:
-    """Generate Baseline V2 observations from current results.csv."""
+    """根据当前 results.csv 生成 baseline_v2 观察结论。"""
     ten_percent = results[results["sample_ratio"].astype(float) < 1.0].copy()
     if ten_percent.empty:
         raise ValueError("No 10% methods were found in results.csv.")
@@ -224,7 +238,7 @@ def build_visual_cluster_observation(results: pd.DataFrame) -> str:
 
 
 def build_method_explanations(results: pd.DataFrame) -> str:
-    """Describe all methods present in results.csv."""
+    """解释 results.csv 中当前存在的所有方法。"""
     descriptions = {
         "random": "Random: random 10% baseline.",
         "action_change": "Action-Change: action surprise from adjacent action changes only.",
@@ -244,7 +258,7 @@ def build_method_explanations(results: pd.DataFrame) -> str:
 
 
 def generate_v1_note(results: pd.DataFrame, note_path: Path) -> None:
-    """Generate Baseline V1 experiment note."""
+    """生成 Baseline V1 实验说明文档。"""
     results_table = build_results_table(results)
     observation = build_observation(results)
 
@@ -319,7 +333,7 @@ This version is the first complete closed-loop baseline experiment. It is archiv
 
 
 def generate_v2_note(results: pd.DataFrame, note_path: Path) -> None:
-    """Generate Baseline V2 experiment note with Visual-Cluster ablation."""
+    """生成包含 Visual-Cluster 消融的 Baseline V2 实验说明文档。"""
     results_table = build_results_table(results)
     observation = build_visual_cluster_observation(results)
     methods = build_method_explanations(results)
@@ -380,7 +394,7 @@ This version extends `baseline_v1_random_action_fusion` with a Visual-Cluster On
 
 
 def build_fusion_neighbor_observation(results: pd.DataFrame) -> str:
-    """Generate Baseline V3 observations from current results.csv."""
+    """根据当前 results.csv 生成 Baseline V3 观察结论。"""
     if "method" not in results.columns or "test_mse" not in results.columns:
         raise ValueError("results.csv must contain method and test_mse columns.")
 
@@ -458,7 +472,7 @@ def build_fusion_neighbor_observation(results: pd.DataFrame) -> str:
 
 
 def generate_v3_note(results: pd.DataFrame, note_path: Path) -> None:
-    """Generate Baseline V3 experiment note with Fusion + Temporal Neighbor."""
+    """生成包含 Fusion + Temporal Neighbor 的 Baseline V3 实验说明文档。"""
     results_table = build_results_table(results)
     observation = build_fusion_neighbor_observation(results)
     methods = build_method_explanations(results)
@@ -525,7 +539,7 @@ This version extends baseline_v2 with Fusion + Temporal Neighbor Coreset. The go
 
 
 def generate_experiment_note(results_csv: Path, note_path: Path, experiment_name: str) -> None:
-    """Generate experiment_note.md from the archived results.csv."""
+    """根据归档后的 results.csv 生成 experiment_note.md。"""
     if not results_csv.exists():
         raise FileNotFoundError(f"Cannot generate experiment note; missing: {results_csv}")
 
@@ -539,7 +553,10 @@ def generate_experiment_note(results_csv: Path, note_path: Path, experiment_name
 
 
 def build_manifest(archive_dir: Path) -> list[dict[str, Any]]:
-    """Recursively scan archive files and return manifest records."""
+    """递归扫描归档目录，生成文件清单。
+
+    manifest 记录相对路径、文件大小和修改时间，便于以后确认归档内容是否完整。
+    """
     records: list[dict[str, Any]] = []
     for path in sorted(archive_dir.rglob("*")):
         if not path.is_file():
@@ -556,7 +573,7 @@ def build_manifest(archive_dir: Path) -> list[dict[str, Any]]:
 
 
 def write_manifest(archive_dir: Path, manifest_path: Path) -> None:
-    """Write file_manifest.json for the archive directory."""
+    """为归档目录写出 file_manifest.json。"""
     records = build_manifest(archive_dir)
     manifest_path.write_text(
         json.dumps(records, ensure_ascii=False, indent=2),
@@ -566,7 +583,10 @@ def write_manifest(archive_dir: Path, manifest_path: Path) -> None:
 
 
 def prepare_archive_dir(archive_dir: Path, overwrite: bool) -> None:
-    """Create the archive directory while respecting overwrite behavior."""
+    """创建归档目录，并遵守默认不覆盖规则。
+
+    已归档的 baseline 是实验基准，不应被误覆盖；只有显式传入 --overwrite 时才删除重建。
+    """
     if archive_dir.exists():
         if not overwrite:
             raise FileExistsError(

@@ -1,8 +1,13 @@
-"""Fusion + Temporal Neighbor Coreset selection.
+"""Stage 3e：Fusion + Temporal Neighbor Coreset。
 
-This method first selects high action-surprise anchor frames with the Fusion
-strategy, then adds temporal neighbors from the same episode. The final selected
-set is strictly limited to 10% of training frames and never uses test frames.
+输入：Stage 2 的 ResNet18 特征、动作标签和 episode/frame 元信息。
+输出：fusion_neighbor 聚类 id、动作分数、选中样本索引、JSON 说明和样本表。
+
+该方法先按 Fusion 思路选择高动作惊奇度 anchor frame，再加入同一 episode 内
+的局部邻域帧。机械臂动作具有局部时间连续性，关键帧前后的 t-1/t+1 可能包含
+有用动作上下文。为公平比较，总预算仍固定为训练集 10%；邻域扩展不能跨 episode，
+也不能加入测试集。若超预算则优先保留 anchor，再保留 neighbor；若不足预算则
+从训练集未选样本中按动作惊奇度补齐。
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from utils import (
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse Fusion + Temporal Neighbor selection arguments."""
+    """解析 Fusion + Temporal Neighbor 采样参数。"""
     parser = argparse.ArgumentParser(description="Run Fusion + Temporal Neighbor Coreset selection.")
     parser.add_argument("--feature_dir", default="outputs/features", help="Stage 2 feature directory.")
     parser.add_argument("--output_dir", default="outputs/results", help="Directory for selection files.")
@@ -40,7 +45,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved
@@ -48,14 +53,18 @@ def resolve_project_path(path: str | Path) -> Path:
 
 
 def selection_budget(num_train_samples: int, sample_ratio: float) -> int:
-    """Return the exact number of samples selected from the training set."""
+    """根据训练集规模和采样比例计算精确采样数量。"""
     if not 0 < sample_ratio <= 1:
         raise ValueError(f"sample_ratio must be in (0, 1], got {sample_ratio}.")
     return max(1, int(round(num_train_samples * sample_ratio)))
 
 
 def anchor_budget_from_neighbor_window(total_budget: int, neighbor_window: int) -> int:
-    """Choose an anchor budget that leaves room for temporal neighbors."""
+    """根据邻域窗口设置 anchor 预算。
+
+    如果直接选择 1600 个 anchor，再扩展邻域会全部被裁剪回 anchor，
+    方法会退化为 Fusion。因此先减少 anchor 数量，为 t-1/t+1 邻域留出预算。
+    """
     neighbor_span = 2 * neighbor_window + 1
     if neighbor_span <= 1:
         return total_budget
@@ -68,7 +77,7 @@ def select_fusion_anchors(
     train_scores: np.ndarray,
     budget: int,
 ) -> np.ndarray:
-    """Select Fusion-style anchor frames by cluster quota and action score."""
+    """按 Fusion 规则选择 anchor：簇配额控制覆盖，动作分数控制信息量。"""
     quotas = allocate_cluster_quotas(train_cluster_ids, budget)
     selected_parts: list[np.ndarray] = []
 
@@ -97,7 +106,7 @@ def build_episode_frame_lookup(
     episode_ids: np.ndarray,
     frame_ids: np.ndarray,
 ) -> dict[tuple[int, int], int]:
-    """Map (episode_id, frame_id) to global index for train frames only."""
+    """建立训练集内 (episode_id, frame_id) 到全局索引的映射。"""
     lookup: dict[tuple[int, int], int] = {}
     for index in train_indices:
         lookup[(int(episode_ids[index]), int(frame_ids[index]))] = int(index)
@@ -111,7 +120,11 @@ def expand_neighbors(
     frame_ids: np.ndarray,
     neighbor_window: int,
 ) -> np.ndarray:
-    """Add t +/- neighbor_window frames within the same training episode."""
+    """在同一训练 episode 内加入 anchor 的时间邻域。
+
+    查找使用 (episode_id, frame_id)，因此不会跨 episode；lookup 只由训练集
+    样本构建，因此测试集帧不可能被加入。
+    """
     lookup = build_episode_frame_lookup(train_indices, episode_ids, frame_ids)
     neighbors: set[int] = set()
     for anchor in anchors.astype(int):
@@ -131,7 +144,11 @@ def finalize_selection(
     train_scores: np.ndarray,
     budget: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Prioritize anchors, then neighbors, then high-score fillers."""
+    """将 anchor、neighbor 和补齐样本合并为严格预算大小的选择集。
+
+    优先级为 anchor > neighbor > 高 action_change_score 补齐样本。
+    这样既保留关键帧，又尽量加入局部上下文，同时保证所有方法样本数一致。
+    """
     anchor_set = set(int(index) for index in anchors)
     ordered_neighbors = np.asarray(
         [int(index) for index in neighbors if int(index) not in anchor_set],
@@ -184,7 +201,7 @@ def build_sample_table(
     anchors_kept: np.ndarray,
     neighbors_kept: np.ndarray,
 ) -> pd.DataFrame:
-    """Build Fusion + Neighbor sample table for training candidates."""
+    """构建 Fusion + Neighbor 的训练候选样本表。"""
     selected_set = set(int(index) for index in selected_indices)
     anchor_set = set(int(index) for index in anchors_kept)
     neighbor_set = set(int(index) for index in neighbors_kept)

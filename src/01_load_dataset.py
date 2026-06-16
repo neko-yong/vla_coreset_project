@@ -1,7 +1,12 @@
-"""Stage 1: check ALOHA data loading with LeRobotDataset first.
+"""Stage 1：ALOHA 数据集读取检查。
 
-This script only verifies dataset access, image fields, and action labels. It
-does not extract ResNet18 features, train an MLP, or run coreset selection.
+输入：Hugging Face / LeRobot 数据集 `lerobot/aloha_sim_transfer_cube_human`。
+输出：仅在终端打印数据集类型、字段名、图像信息和 action 信息，不写训练结果。
+
+本阶段的目标是确认课程指定数据集能够通过 LeRobotDataset 正确读取图像。
+普通 `datasets.load_dataset` 在本数据集上通常只能看到 state/action 等表格字段，
+无法直接获得解码图像；后续需要提取单视角图像特征，因此主读取方式使用
+`LeRobotDataset`。本脚本只做数据读取 smoke test，不做训练、特征提取或核心集选择。
 """
 
 from __future__ import annotations
@@ -30,7 +35,7 @@ IMAGE_FIELD_PRIORITY = (
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments for the Stage 1 dataset check."""
+    """解析 Stage 1 数据集检查脚本的命令行参数。"""
     parser = argparse.ArgumentParser(description="Check ALOHA dataset loading.")
     parser.add_argument(
         "--dataset_name",
@@ -58,7 +63,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_cache_dir(cache_dir: str) -> Path:
-    """Resolve cache_dir relative to the project root unless it is absolute."""
+    """解析缓存目录；相对路径按项目根目录解释。"""
     path = Path(cache_dir)
     if not path.is_absolute():
         path = get_project_root() / path
@@ -66,11 +71,10 @@ def resolve_cache_dir(cache_dir: str) -> Path:
 
 
 def flatten_dict(sample: Any, prefix: str = "") -> dict[str, Any]:
-    """Flatten nested dictionaries into dot-separated keys.
+    """将嵌套样本展开为点号 key。
 
-    LeRobotDataset samples are often already flat, for example
-    ``observation.images.top``. Some loaders may return nested dictionaries.
-    This helper supports both formats with one lookup path.
+    LeRobotDataset 有时返回扁平 key，如 `observation.images.top`；
+    其他加载方式可能返回嵌套 dict。统一展开后，字段检测逻辑更稳健。
     """
     flattened: dict[str, Any] = {}
     if not isinstance(sample, Mapping):
@@ -86,13 +90,13 @@ def flatten_dict(sample: Any, prefix: str = "") -> dict[str, Any]:
 
 
 def keys_containing(flattened: Mapping[str, Any], text: str) -> list[str]:
-    """Return keys containing a case-insensitive substring."""
+    """返回包含指定子串的字段名，忽略大小写。"""
     text = text.lower()
     return [key for key in flattened.keys() if text in key.lower()]
 
 
 def print_value_summary(name: str, value: Any, max_chars: int = 1000) -> None:
-    """Print a short summary for potentially large dataset attributes."""
+    """打印较大对象的简短摘要，避免终端输出过长。"""
     text = repr(value)
     if len(text) > max_chars:
         text = text[:max_chars] + "..."
@@ -100,7 +104,7 @@ def print_value_summary(name: str, value: Any, max_chars: int = 1000) -> None:
 
 
 def print_dataset_basic_info(dataset: Any) -> None:
-    """Print dataset type, length, metadata, features, and first sample keys."""
+    """打印数据集类型、长度、元信息、features 和第一个样本字段。"""
     print("\nLeRobotDataset basic information:")
     print(f"dataset type: {type(dataset)}")
     try:
@@ -126,7 +130,11 @@ def print_dataset_basic_info(dataset: Any) -> None:
 
 
 def import_lerobot_dataset() -> Any | None:
-    """Import LeRobotDataset, returning None when lerobot is unavailable."""
+    """导入 LeRobotDataset。
+
+    LeRobotDataset 能读取视频/图像字段，是本项目后续视觉特征提取的基础。
+    如果导入失败，才退回到 datasets.load_dataset，并明确提示该方式可能只有表格字段。
+    """
     try:
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
@@ -141,7 +149,7 @@ def import_lerobot_dataset() -> Any | None:
 
 
 def instantiate_lerobot_dataset(dataset_cls: Any, repo_id: str, root: Path) -> Any | None:
-    """Instantiate LeRobotDataset and print constructor details on failure."""
+    """实例化 LeRobotDataset；失败时打印构造函数签名便于排查版本差异。"""
     try:
         return dataset_cls(repo_id=repo_id, root=root)
     except TypeError as exc:
@@ -182,7 +190,7 @@ def instantiate_lerobot_dataset(dataset_cls: Any, repo_id: str, root: Path) -> A
 
 
 def print_image_value_info(field: str, value: Any) -> None:
-    """Print type-specific information for a selected image field."""
+    """根据图像字段类型打印 shape、dtype、范围或摘要信息。"""
     print(f"  selected image field: {field}")
     print(f"  image type: {type(value)}")
 
@@ -209,7 +217,7 @@ def print_image_value_info(field: str, value: Any) -> None:
 
 
 def select_image_field(flattened: Mapping[str, Any]) -> str | None:
-    """Select one camera/image field using the requested priority order."""
+    """按优先级自动选择一个单视角图像字段。"""
     for candidate in IMAGE_FIELD_PRIORITY:
         if candidate in flattened and not isinstance(flattened[candidate], Mapping):
             return candidate
@@ -222,7 +230,11 @@ def select_image_field(flattened: Mapping[str, Any]) -> str | None:
 
 
 def print_action_info(action_value: Any) -> Any:
-    """Print action shape/preview and return the single-arm 7-DoF label."""
+    """打印 action 信息，并返回单臂 7 自由度动作标签。
+
+    ALOHA 原始 action 为 14 维，通常对应双臂动作。本课程设计为了降低任务
+    复杂度，仅预测单臂 7 自由度动作，因此使用 action[:7]。
+    """
     if isinstance(action_value, torch.Tensor):
         action = action_value.detach().cpu()
         flat = action.reshape(-1)
@@ -258,7 +270,7 @@ def print_action_info(action_value: Any) -> Any:
 
 
 def inspect_lerobot_samples(dataset: Any, max_samples: int) -> tuple[str | None, str | None]:
-    """Inspect the first samples from LeRobotDataset."""
+    """检查 LeRobotDataset 前若干个样本的字段结构和图像/action 信息。"""
     detected_image_field: str | None = None
     detected_action_field: str | None = None
     inspect_count = min(max_samples, len(dataset))
@@ -299,7 +311,7 @@ def inspect_lerobot_samples(dataset: Any, max_samples: int) -> tuple[str | None,
 
 
 def fallback_load_dataset(dataset_name: str, cache_dir: Path, max_samples: int) -> None:
-    """Fallback to datasets.load_dataset for tabular metadata inspection."""
+    """退回 datasets.load_dataset，仅用于查看表格元数据字段。"""
     print("\nFallback to datasets.load_dataset. This may only load tabular metadata and may not include decoded images.")
     dataset = load_dataset(dataset_name, cache_dir=str(cache_dir))
 

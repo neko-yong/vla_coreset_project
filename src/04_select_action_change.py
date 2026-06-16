@@ -1,8 +1,12 @@
-"""Stage 3b: Action-Change Coreset selection.
+"""Stage 3b：Action-Change Coreset 采样。
 
-The action-change score is the within-episode L2 distance between adjacent
-actions. It corresponds to prediction error / surprise in predictive coding and
-is used to filter temporally redundant frames.
+输入：`outputs/features/actions.npy` 与 `episode_ids.npy`。
+输出：动作变化分数、Action-Change 选中样本索引和选择说明 JSON。
+
+该方法的认知动机来自预测编码中的 prediction error / surprise：如果相邻两帧
+动作差异较大，说明该时刻包含较高控制信息，值得优先保留。动作变化必须在
+同一个 episode 内计算，不能跨 episode 相减。该方法只关注时间动作突变，
+可能忽略视觉状态覆盖，因此后续与 Fusion/Visual-Cluster 做对照。
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from utils import (
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse Action-Change Coreset arguments."""
+    """解析 Action-Change Coreset 采样参数。"""
     parser = argparse.ArgumentParser(description="Select high action-change training frames.")
     parser.add_argument("--feature_dir", default="outputs/features", help="Stage 2 feature directory.")
     parser.add_argument("--output_dir", default="outputs/results", help="Directory for selection files.")
@@ -35,7 +39,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved
@@ -43,7 +47,7 @@ def resolve_project_path(path: str | Path) -> Path:
 
 
 def selection_budget(num_train_samples: int, sample_ratio: float) -> int:
-    """Return the exact number of samples selected from the training set."""
+    """根据训练集规模和采样比例计算精确采样数量。"""
     if not 0 < sample_ratio <= 1:
         raise ValueError(f"sample_ratio must be in (0, 1], got {sample_ratio}.")
     return max(1, int(round(num_train_samples * sample_ratio)))
@@ -63,6 +67,7 @@ def main() -> None:
     train_indices = np.flatnonzero(train_mask)
     budget = selection_budget(len(train_indices), args.sample_ratio)
 
+    # 只在训练集内计算动作惊奇度；测试集分数保持 0，避免测试信息参与采样。
     scores = np.zeros(len(episode_ids), dtype=np.float32)
     train_scores = compute_action_change_scores(actions[train_indices], episode_ids[train_indices])
     scores[train_indices] = train_scores

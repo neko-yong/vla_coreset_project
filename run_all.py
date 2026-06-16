@@ -1,4 +1,12 @@
-"""Project entry point for staged course-design steps."""
+"""项目统一运行入口。
+
+该文件将课程设计流程按 stage 封装为命令行入口，便于按阶段复现实验：
+数据读取、特征提取、样本选择、MLP 训练评估、可视化和归档。
+
+默认 stage 为 `load`，只做轻量数据读取检查。耗时或可能覆盖结果的任务
+（如完整特征提取、训练、归档覆盖）都需要用户显式选择对应 stage，
+避免误触发长时间实验或覆盖已有结果。
+"""
 
 from __future__ import annotations
 
@@ -9,7 +17,7 @@ from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse the stage selector for safe staged execution."""
+    """解析 stage 选择参数，保证按阶段安全执行。"""
     parser = argparse.ArgumentParser(description="Run selected VLA coreset project stage.")
     parser.add_argument(
         "--stage",
@@ -52,7 +60,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_commands(project_root: Path, args: argparse.Namespace) -> list[list[str]]:
-    """Build subprocess commands for the selected stage."""
+    """根据 stage 构造要执行的子命令。
+
+    每个 stage 对应实验流程中的一个可复现步骤。使用 subprocess 调用独立脚本，
+    可以保持各阶段职责清晰，也便于单独调试。
+    """
     if args.stage == "load":
         return [[sys.executable, str(project_root / "src" / "01_load_dataset.py")]]
 

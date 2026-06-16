@@ -1,8 +1,11 @@
-"""Visual-Cluster Only Coreset selection.
+"""Stage 3d：Visual-Cluster Only 消融采样。
 
-This ablation uses visual state coverage only: KMeans is fit on training
-ResNet18 features, cluster quotas are proportional to cluster sizes, and frames
-inside each cluster are sampled randomly without using action-change scores.
+输入：Stage 2 的 ResNet18 特征和 episode/frame/timestamp 元信息。
+输出：visual_cluster 聚类 id、选中样本索引、JSON 说明和样本表。
+
+Visual-Cluster Only 是 Fusion 的消融实验，只保留“视觉状态覆盖”这一部分，
+不使用动作变化分数。它通过训练集特征 KMeans 聚类分配采样预算，簇内随机选样。
+该方法用于验证：仅靠视觉状态覆盖是否已经能提升核心集质量。
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ from utils import (
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse Visual-Cluster Only selection arguments."""
+    """解析 Visual-Cluster Only 采样参数。"""
     parser = argparse.ArgumentParser(description="Run Visual-Cluster Only Coreset selection.")
     parser.add_argument("--feature_dir", default="outputs/features", help="Stage 2 feature directory.")
     parser.add_argument("--output_dir", default="outputs/results", help="Directory for selection files.")
@@ -38,7 +41,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_project_path(path: str | Path) -> Path:
-    """Resolve a path relative to the project root unless it is absolute."""
+    """解析项目路径；相对路径按项目根目录解释。"""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = get_project_root() / resolved
@@ -46,7 +49,7 @@ def resolve_project_path(path: str | Path) -> Path:
 
 
 def selection_budget(num_train_samples: int, sample_ratio: float) -> int:
-    """Return the exact number of samples selected from the training set."""
+    """根据训练集规模和采样比例计算精确采样数量。"""
     if not 0 < sample_ratio <= 1:
         raise ValueError(f"sample_ratio must be in (0, 1], got {sample_ratio}.")
     return max(1, int(round(num_train_samples * sample_ratio)))
@@ -58,7 +61,11 @@ def select_random_by_cluster_quota(
     budget: int,
     seed: int,
 ) -> tuple[np.ndarray, dict[int, int], dict[int, int]]:
-    """Randomly sample train frames inside proportional cluster quotas."""
+    """在每个视觉簇内按配额随机采样训练样本。
+
+    与 Fusion 的区别在于：这里簇内不按 action_change_score 排序，
+    因而可以作为“视觉覆盖本身”的消融对照。
+    """
     quotas = allocate_cluster_quotas(train_cluster_ids, budget)
     rng = np.random.default_rng(seed)
     selected_parts: list[np.ndarray] = []
@@ -117,7 +124,7 @@ def build_sample_table(
     cluster_ids_full: np.ndarray,
     selected_indices: np.ndarray,
 ) -> pd.DataFrame:
-    """Build the Visual-Cluster sample table for training candidates."""
+    """构建 Visual-Cluster 的训练候选样本表。"""
     selected_set = set(int(index) for index in selected_indices)
     return pd.DataFrame(
         {
@@ -156,6 +163,7 @@ def main() -> None:
             f"num_clusters={args.num_clusters} cannot exceed train samples={len(train_indices)}."
         )
 
+    # KMeans 只 fit 训练集特征；测试集不能参与聚类、采样或配额分配。
     print("Fitting KMeans on training features only.")
     print(f"Train samples: {train_mask.sum()}")
     print(f"Test samples: {test_mask.sum()}")

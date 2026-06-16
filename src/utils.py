@@ -1,4 +1,15 @@
-"""Common utility helpers for the VLA coreset project."""
+"""项目通用工具函数。
+
+本文件不对应单独实验阶段，而是为 Stage 1-9 提供公共能力：
+- 固定随机种子，保证样本选择和训练结果可复现；
+- 统一创建目录、读写 JSON、定位项目根目录；
+- 读取 Stage 2 生成的特征数组；
+- 生成固定 train/test episode 划分；
+- 计算动作变化分数与簇采样预算。
+
+这些函数集中放置，可以减少各阶段脚本中的重复代码，并降低不同方法
+在数据划分或分数计算上出现不一致的风险。
+"""
 
 from __future__ import annotations
 
@@ -11,7 +22,11 @@ import numpy as np
 
 
 def set_seed(seed: int = 42) -> None:
-    """Fix random seeds for Python, NumPy, and PyTorch when PyTorch is available."""
+    """固定 Python、NumPy 和 PyTorch 随机种子。
+
+    核心集选择和 MLP 训练都涉及随机过程。固定 seed=42 可以保证课程设计
+    实验在同一环境下可复现，便于不同采样方法做公平比较。
+    """
     random.seed(seed)
     np.random.seed(seed)
 
@@ -24,24 +39,24 @@ def set_seed(seed: int = 42) -> None:
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
     except ImportError:
-        # Keep utility imports usable before the full environment is installed.
+        # 即使完整依赖尚未安装，也允许工具函数被导入使用。
         pass
 
 
 def ensure_dir(path: str | Path) -> Path:
-    """Create a directory if it does not exist and return it as a Path."""
+    """目录不存在时自动创建，并以 Path 形式返回。"""
     directory = Path(path)
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 
 
 def get_project_root() -> Path:
-    """Return the project root without relying on a machine-specific path."""
+    """返回项目根目录，避免依赖本机绝对路径。"""
     return Path(__file__).resolve().parents[1]
 
 
 def save_json(data: Any, path: str | Path) -> None:
-    """Save data as a JSON file, creating the parent directory automatically."""
+    """保存 JSON 文件，并自动创建父目录。"""
     json_path = Path(path)
     ensure_dir(json_path.parent)
     with json_path.open("w", encoding="utf-8") as f:
@@ -49,13 +64,13 @@ def save_json(data: Any, path: str | Path) -> None:
 
 
 def load_json(path: str | Path) -> Any:
-    """Load a JSON file from disk."""
+    """从磁盘读取 JSON 文件。"""
     with Path(path).open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def load_feature_arrays(feature_dir: str | Path) -> dict[str, Any]:
-    """Load Stage 2 feature arrays and split metadata from a feature directory."""
+    """读取 Stage 2 生成的特征数组和划分元信息。"""
     feature_path = Path(feature_dir)
     required_files = {
         "features": feature_path / "features.npy",
@@ -87,11 +102,11 @@ def get_train_test_masks(
     episode_ids: np.ndarray,
     train_ratio: float = 0.8,
 ) -> tuple[np.ndarray, np.ndarray, list[int], list[int]]:
-    """Create fixed episode-level train/test masks.
+    """创建固定的 episode 级训练/测试划分。
 
-    Episodes are sorted by id. The first train_ratio fraction is used for
-    training, and the remaining episodes are reserved for testing. Test samples
-    must never be used for selection or clustering.
+    Episodes 按 id 排序，前 80% 作为训练集，后 20% 作为测试集。
+    在核心集选择任务中，测试集只能用于最终评估，不能参与采样、聚类、
+    标准化拟合或预算分配，避免信息泄漏。
     """
     sorted_episode_ids = sorted(int(episode_id) for episode_id in np.unique(episode_ids))
     if not sorted_episode_ids:
@@ -112,11 +127,11 @@ def get_train_test_masks(
 
 
 def compute_action_change_scores(actions: np.ndarray, episode_ids: np.ndarray) -> np.ndarray:
-    """Compute within-episode L2 action changes for adjacent frames.
+    """计算同一 episode 内相邻帧动作变化分数。
 
-    Each episode's first frame receives score 0. Different episode boundaries
-    are never subtracted. This score corresponds to prediction error / surprise
-    in predictive coding and helps filter temporally redundant frames.
+    每个 episode 的第一帧分数设为 0，不同 episode 之间不能相减。
+    该分数可理解为预测编码中的 prediction error / surprise：
+    相邻动作变化越大，该时刻包含的控制信息通常越强。
     """
     if len(actions) != len(episode_ids):
         raise ValueError(
@@ -135,11 +150,11 @@ def compute_action_change_scores(actions: np.ndarray, episode_ids: np.ndarray) -
 
 
 def allocate_cluster_quotas(cluster_ids: np.ndarray, total_budget: int) -> dict[int, int]:
-    """Allocate an exact sample budget across non-empty clusters.
+    """按簇大小分配严格的采样预算。
 
-    Quotas are proportional to cluster size. When possible, every non-empty
-    cluster receives at least one sample, then rounding leftovers are assigned
-    by largest fractional remainder. The returned quotas sum to total_budget.
+    配额与簇内训练样本数成比例；在预算允许时，每个非空簇至少保留 1 个样本。
+    这用于“视觉状态覆盖”思想：大簇应获得更多名额，小簇也尽量不被完全忽略。
+    返回的所有配额之和严格等于 total_budget。
     """
     if total_budget < 0:
         raise ValueError(f"total_budget must be non-negative, got {total_budget}.")
@@ -174,7 +189,7 @@ def allocate_cluster_quotas(cluster_ids: np.ndarray, total_budget: int) -> dict[
 
 
 def infer_shape(value: Any) -> tuple[int, ...] | str:
-    """Infer a readable shape for tensors, arrays, PIL images, or lists."""
+    """推断 tensor、array、PIL 图像或列表的可读 shape。"""
     if hasattr(value, "shape"):
         return tuple(value.shape)
 
@@ -189,7 +204,7 @@ def infer_shape(value: Any) -> tuple[int, ...] | str:
 
 
 def to_numpy(value: Any) -> np.ndarray:
-    """Convert common sample values to a NumPy array without assuming a backend."""
+    """将常见样本值转换为 NumPy 数组，兼容 torch / numpy / list。"""
     if hasattr(value, "detach"):
         return value.detach().cpu().numpy()
 
