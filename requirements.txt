@@ -1,0 +1,14 @@
+torch==2.7.1
+torchvision==0.22.1
+numpy
+pandas
+scikit-learn
+matplotlib
+tqdm
+datasets
+pillow
+huggingface_hub
+opencv-python
+safetensors
+av
+lerobot==0.4.4

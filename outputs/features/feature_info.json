@@ -1,0 +1,14 @@
+{
+  "dataset_name": "lerobot/aloha_sim_transfer_cube_human",
+  "image_field": "observation.images.top",
+  "action_field": "action",
+  "num_samples": 20000,
+  "feature_dim": 512,
+  "action_dim": 7,
+  "model": "torchvision.models.resnet18 with fc=Identity",
+  "pretrained_weights": "ResNet18_Weights.IMAGENET1K_V1",
+  "batch_size": 32,
+  "device": "cpu",
+  "seed": 42,
+  "max_samples": null
+}

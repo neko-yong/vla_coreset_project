@@ -1,0 +1,20 @@
+{
+  "method": "fusion",
+  "sample_ratio": 0.1,
+  "num_train_samples": 1600,
+  "num_test_samples": 4000,
+  "test_mse": 0.006523954473053371,
+  "joint_1_mse": 0.00013338866515550762,
+  "joint_2_mse": 0.0030406535007059575,
+  "joint_3_mse": 0.004243776910007,
+  "joint_4_mse": 0.0013720047231763602,
+  "joint_5_mse": 0.003670223950408399,
+  "joint_6_mse": 0.0021326595600694416,
+  "joint_7_mse": 0.031074974001850934,
+  "epochs": 100,
+  "batch_size": 128,
+  "lr": 0.001,
+  "seed": 42,
+  "standardize_features": true,
+  "checkpoint_path": "D:\\projects\\vla_coreset_project\\outputs\\checkpoints\\mlp_fusion.pt"
+}
